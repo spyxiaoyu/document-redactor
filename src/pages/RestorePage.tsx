@@ -130,7 +130,7 @@ export function RestorePage() {
         const result = await mammoth.extractRawText({ buffer: arrayBuffer as any });
         desensitizedText = result.value;
       } else if (selectedRecord) {
-        // 模式2：DB 记录恢复（原有逻辑）
+        // 模式2：DB 记录恢复
         mappingTable = await desensitizer.decryptMappingTable(
           selectedRecord.mappingTable,
           password,
@@ -138,7 +138,16 @@ export function RestorePage() {
           selectedRecord.iv
         ) as MappingEntry[];
 
-        desensitizedText = await file!.text();
+        // DOCX 必须走 mammoth；否则 file.text() 拿到的是 ZIP 二进制乱码。
+        // 其他格式保持 file.text()。
+        if (file!.name.toLowerCase().endsWith('.docx')) {
+          const mammoth = await import('mammoth');
+          const buffer = await file!.arrayBuffer();
+          const result = await mammoth.extractRawText({ buffer: buffer as any });
+          desensitizedText = result.value;
+        } else {
+          desensitizedText = await file!.text();
+        }
       } else {
         throw new Error('无可用恢复数据');
       }
