@@ -133,7 +133,7 @@ export function RestorePage() {
         // 用 mammoth 在浏览器提取纯文本（file.text() 对 DOCX 返回 ZIP 二进制，是乱码根因）
         const mammoth = await import('mammoth');
         const arrayBuffer = await file!.arrayBuffer();
-        const result = await mammoth.extractRawText({ buffer: arrayBuffer as any });
+        const result = await mammoth.extractRawText({ arrayBuffer: arrayBuffer as any });
         desensitizedText = result.value;
       } else if (selectedRecord) {
         // 模式2：DB 记录恢复
@@ -150,7 +150,7 @@ export function RestorePage() {
         if (file!.name.toLowerCase().endsWith('.docx')) {
           const mammoth = await import('mammoth');
           const buffer = await file!.arrayBuffer();
-          const result = await mammoth.extractRawText({ buffer: buffer as any });
+          const result = await mammoth.extractRawText({ arrayBuffer: buffer as any });
           desensitizedText = result.value;
         } else {
           desensitizedText = await file!.text();

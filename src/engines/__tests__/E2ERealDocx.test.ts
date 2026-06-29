@@ -27,6 +27,20 @@ import { SensitiveFinder } from '../SensitiveFinder';
 const SRC = '<repo-path>/模板/SAMPLE-CT-002-知识产权服务框架协议-SAMPLE-CO-Z.docx';
 const PASSWORD = 'test123';
 
+// mammoth 在不同环境下用不同 unzip：
+//   Node (lib/unzip.js): 认 options.buffer / path / file
+//   Browser (browser/unzip.js): 只认 options.arrayBuffer
+// 两边都传。Node 命中 buffer，浏览器命中 arrayBuffer。
+function toArrayBuffer(buf: Uint8Array): ArrayBuffer {
+  const ab = new ArrayBuffer(buf.byteLength);
+  new Uint8Array(ab).set(buf);
+  return ab;
+}
+function mammothInput(buf: Uint8Array) {
+  const ab = toArrayBuffer(buf);
+  return { buffer: ab, arrayBuffer: ab };
+}
+
 // 从真实文件前 100 字看到：
 //   "SAMPLE-CT-004"   ← 合同号
 //   "SAMPLE-CO-F（北京）融媒体科技文化有限公司"   ← 公司名（带中文括号）
@@ -47,7 +61,7 @@ describe('E2E with real DOCX', () => {
 
     // 1) 读源文件 + mammoth 提文本
     const srcBuffer = fs.readFileSync(SRC);
-    const extract = await mammoth.extractRawText({ buffer: srcBuffer });
+    const extract = await mammoth.extractRawText(mammothInput(srcBuffer));
     const originalText = extract.value;
     console.log(`  原文长度 ${originalText.length}, 前 100 字: ${originalText.slice(0, 100)}`);
 
@@ -111,7 +125,7 @@ describe('E2E with real DOCX', () => {
     expect(decrypted.length).toBe(mappingTable.length);
 
     // 8) mammoth 从加密文件提 desensitizedText
-    const extract2 = await mammoth.extractRawText({ buffer: encBuffer });
+    const extract2 = await mammoth.extractRawText(mammothInput(encBuffer));
     const desensitizedFromFile = extract2.value;
     console.log(`  mammoth 从加密文件提的脱敏文本长度 ${desensitizedFromFile.length}`);
 
@@ -138,7 +152,7 @@ describe('E2E with real DOCX', () => {
   it('wrong password is rejected by AES-GCM', async () => {
     if (!fs.existsSync(SRC)) return; // skip if file missing
     const srcBuffer = fs.readFileSync(SRC);
-    const extract = await mammoth.extractRawText({ buffer: srcBuffer });
+    const extract = await mammoth.extractRawText(mammothInput(srcBuffer));
     const finder = new SensitiveFinder();
     finder.addKeywords(KNOWN_KEYWORDS);
     const matches = finder.findSensitiveContent(extract.value, { includeDisabled: true }).matches;
