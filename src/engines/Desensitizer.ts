@@ -22,18 +22,23 @@ export class Desensitizer {
     _options: DesensitizeOptions
   ): Promise<{ desensitizedText: string; mappingTable: MappingEntry[] }> {
     const mappingTable: MappingEntry[] = [];
-    let desensitizedText = text;
 
-    const sortedMatches = [...matches].sort((a, b) => b.start - a.start);
+    // 按原始文本位置升序排列。用 cursor 走原始 text 构建新字符串，
+    // 避免在已替换过的文本上用原 match 位置切分（多 match 时位置会错位）。
+    const sortedMatches = [...matches].sort((a, b) => a.start - b.start);
 
+    let result = '';
+    let cursor = 0;
     for (let i = 0; i < sortedMatches.length; i++) {
       const match = sortedMatches[i];
+      if (match.start < cursor || match.end < match.start) {
+        // 重叠或非法区间：跳过（上游 SensitiveFinder 应保证非重叠，做兜底）
+        continue;
+      }
       const token = generateToken(match.type, i + 1);
 
-      desensitizedText =
-        desensitizedText.slice(0, match.start) +
-        token +
-        desensitizedText.slice(match.end);
+      result += text.slice(cursor, match.start) + token;
+      cursor = match.end;
 
       mappingTable.push({
         id: generateUUID(),
@@ -42,12 +47,13 @@ export class Desensitizer {
         maskedToken: token,
         position: {
           start: match.start,
-          end: match.start + token.length
+          end: match.start + match.value.length // 记录原值长度，便于复用
         }
       });
     }
+    result += text.slice(cursor);
 
-    return { desensitizedText, mappingTable };
+    return { desensitizedText: result, mappingTable };
   }
 
   async restore(

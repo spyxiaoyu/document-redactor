@@ -177,8 +177,25 @@ export function RestorePage() {
       setRestoredContent(restoredText);
       setDecryptedMapping(mappingTable);
       setShowPasswordModal(false);
-    } catch (err) {
-      setError('密码错误或映射表解密失败');
+    } catch (err: any) {
+      // 把真实异常打到 console，方便用户在浏览器 devtools 直接看到。
+      // 之前这里统一翻译成"密码错误或映射表解密失败"把别的错也吞了，
+      // 用户根本不知道真凶是 mammoth、restore、还是 DB。
+      console.error('[RestorePage] handleRestore failed:', err);
+
+      const name: string = err?.name || '';
+      const message: string = err?.message || '';
+
+      if (name === 'OperationError' || message.toLowerCase().includes('aes-gcm')) {
+        // AES-GCM 解密失败的特征错误：AES 解不开
+        setError('密码错误或映射表数据已损坏，请检查密码');
+      } else if (name === 'TypeError' && message.includes('extractRawText')) {
+        setError('文件不是有效的 DOCX，无法提取文本');
+      } else if (name === 'SyntaxError') {
+        setError('映射表 JSON 解析失败，文件可能已损坏');
+      } else {
+        setError(`恢复失败: ${name || '未知错误'} — 请打开浏览器 devtools 查看详情`);
+      }
     } finally {
       setIsProcessing(false);
     }
