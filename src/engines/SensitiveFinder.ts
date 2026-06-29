@@ -1,6 +1,6 @@
 import type { Rule, SensitiveMatch, SensitiveDetectionResult, SensitiveType } from '@/types';
 import { createRulesFromBuiltin } from '@/rules';
-import { extractContext, mergeOverlapping } from '@/utils';
+import { extractContext } from '@/utils';
 import { generateUUID } from '@/utils';
 
 interface FindOptions {
@@ -107,7 +107,7 @@ export class SensitiveFinder {
       }
     }
 
-    const merged = mergeOverlapping(matches);
+    const merged = mergeOverlappingValueAware(matches);
 
     const byType: Record<SensitiveType, number> = {} as Record<SensitiveType, number>;
     for (const m of merged) byType[m.type] = (byType[m.type] || 0) + 1;
@@ -121,4 +121,35 @@ export class SensitiveFinder {
   static createSimpleAmountUpperPattern(): RegExp {
     return /[零壹贰叁肆伍陆柒捌玖]+(?:[零壹贰叁肆伍陆柒捌玖]*[角分])?(?:[元整])?/g;
   }
+}
+
+/**
+ * Value-aware overlap merge for SensitiveMatch.
+ *
+ * The generic utils.mergeOverlapping<T extends { start; end }> extends last.end
+ * without touching `value` — so when the FIRST (shorter) match absorbs the SECOND
+ * (longer) match's range, you get a match with value.length < end - start.
+ * That corrupted match then breaks the integrity invariant that downstream
+ * Desensitizer / restore depend on:
+ *   text.slice(m.start, m.start + m.value.length) === m.value
+ *
+ * Resolution: on overlap, keep the LONGER match (more specific detection wins).
+ * Same length: keep the first (deterministic, no semantic difference).
+ */
+function mergeOverlappingValueAware(matches: SensitiveMatch[]): SensitiveMatch[] {
+  if (matches.length === 0) return [];
+  const sorted = [...matches].sort((a, b) => a.start - b.start);
+  const merged: SensitiveMatch[] = [];
+  for (const m of sorted) {
+    const last = merged[merged.length - 1];
+    if (last && m.start < last.end) {
+      if (m.end - m.start > last.end - last.start) {
+        merged[merged.length - 1] = m;
+      }
+      // else: last is longer or equal, drop m
+    } else {
+      merged.push(m);
+    }
+  }
+  return merged;
 }
