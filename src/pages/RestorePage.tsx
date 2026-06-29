@@ -184,15 +184,44 @@ export function RestorePage() {
     }
   }, [selectedRecord, password, file, embeddedMapping]);
 
-  const handleDownload = useCallback(() => {
+  const handleDownload = useCallback(async () => {
     if (!restoredContent || !selectedRecord) return;
 
     const originalFileName = selectedRecord.fileName.replace(/_脱敏$/, '');
-    const blob = new Blob([restoredContent], { type: 'text/plain' });
+    const isDocx = originalFileName.toLowerCase().endsWith('.docx');
+
+    let blob: Blob;
+    let filename: string;
+
+    if (isDocx) {
+      // 重新打包成 DOCX（恢复后的文本 -> 段落 -> DOCX blob）
+      // 已知限制：表格/图片/版式会丢失，只保留段落文字。
+      const { Document, Packer, Paragraph, TextRun } = await import('docx');
+      const paragraphs = restoredContent.split('\n').map(
+        line => new Paragraph({ children: [new TextRun(line)] })
+      );
+      const doc = new Document({ sections: [{ children: paragraphs }] });
+      const buffer = await Packer.toBuffer(doc);
+      blob = new Blob([new Uint8Array(buffer)], {
+        type: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
+      });
+      filename = originalFileName.replace(/\.docx$/i, '_restored.docx');
+    } else {
+      blob = new Blob([restoredContent], { type: 'text/plain;charset=utf-8' });
+      // PDF 重新生成前端做不到，转成 .txt；其他格式保持原扩展名 + .txt 后缀
+      if (/\.pdf$/i.test(originalFileName)) {
+        filename = originalFileName.replace(/\.pdf$/i, '_restored.txt');
+      } else if (/\.(txt|md)$/i.test(originalFileName)) {
+        filename = originalFileName;
+      } else {
+        filename = originalFileName + '.txt';
+      }
+    }
+
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = originalFileName;
+    a.download = filename;
     document.body.appendChild(a);
     a.click();
     document.body.removeChild(a);
