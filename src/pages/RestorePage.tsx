@@ -10,6 +10,8 @@ import { addAuditLog } from '@/db';
 import { Unlock, Download, FileText, AlertCircle, Search } from 'lucide-react';
 import JSZip from 'jszip';
 
+const MAX_RESTORE_PREVIEW_CHARS = 500_000;
+
 const cryptoManager = new CryptoManager();
 const desensitizer = new Desensitizer(cryptoManager);
 
@@ -239,10 +241,10 @@ export function RestorePage() {
             </div>
             <div className="p-4 max-h-[400px] overflow-y-auto">
               <pre className="whitespace-pre-wrap text-sm leading-relaxed">
-                {restoredContent.slice(0, 50000)}
-                {restoredContent.length > 50000 && (
+                {restoredContent.slice(0, MAX_RESTORE_PREVIEW_CHARS)}
+                {restoredContent.length > MAX_RESTORE_PREVIEW_CHARS && (
                   <span className="text-muted-foreground">
-                    ... (还有 {restoredContent.length - 50000} 字符未显示)
+                    ... (还有 {restoredContent.length - MAX_RESTORE_PREVIEW_CHARS} 字符未显示)
                   </span>
                 )}
               </pre>

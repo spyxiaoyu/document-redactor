@@ -8,6 +8,8 @@ import type { SensitiveMatch, MappingEntry } from '@/types';
 import { CryptoManager } from '@/engines/CryptoManager';
 import { generateUUID } from '@/utils';
 
+const MAX_DESENSITIZE_CHARS = 500_000;
+
 export function UploadPage() {
   // 订阅整个 store，任意字段变化都触发 re-render
   const storeState = useFileStore();
@@ -136,8 +138,14 @@ export function UploadPage() {
     setPassword('');
     setConfirmPassword('');
     // 执行实际下载（复用 handleDownload 的核心逻辑）
-    const src = (parsedDocument!.rawText || '').slice(0, 50000);
+    const fullText = parsedDocument!.rawText || '';
+    const wasTruncated = fullText.length > MAX_DESENSITIZE_CHARS;
+    const src = wasTruncated ? fullText.slice(0, MAX_DESENSITIZE_CHARS) : fullText;
     if (!src) return;
+    if (wasTruncated) {
+      setToast(`文件过大（${fullText.length} 字符），已截断到前 ${MAX_DESENSITIZE_CHARS} 字符`);
+      setTimeout(() => setToast(null), 3000);
+    }
     const mappingTable: MappingEntry[] = [];
     const sorted = [...sensitiveMatches].sort((a, b) => a.start - b.start);
     let offset = 0;
@@ -172,8 +180,14 @@ export function UploadPage() {
       return;
     }
 
-    const src = (parsedDocument.rawText || '').slice(0, 50000);
+    const fullText = parsedDocument.rawText || '';
+    const wasTruncated = fullText.length > MAX_DESENSITIZE_CHARS;
+    const src = wasTruncated ? fullText.slice(0, MAX_DESENSITIZE_CHARS) : fullText;
     if (!src) return;
+    if (wasTruncated) {
+      setToast(`文件过大（${fullText.length} 字符），已截断到前 ${MAX_DESENSITIZE_CHARS} 字符`);
+      setTimeout(() => setToast(null), 3000);
+    }
 
     // 实时生成 mappingTable（与 getDesensitizedText 完全对齐，用 _ 序列作为 token）
     const mappingTable: MappingEntry[] = [];
@@ -383,7 +397,9 @@ export function UploadPage() {
   }, [toggleMatchSelection, localSelected, renderKey]);
 
   const originalText = parsedDocument?.rawText || '';
-  const previewText = originalText.slice(0, 50000);
+  const previewText = originalText.length > MAX_DESENSITIZE_CHARS
+    ? originalText.slice(0, MAX_DESENSITIZE_CHARS)
+    : originalText;
 
   if (!currentFile) {
     return (
@@ -534,9 +550,9 @@ export function UploadPage() {
                     <Plus className="h-3 w-3" /> 添加
                   </button>
                 )}
-                {originalText.length > 50000 && (
+                {originalText.length > MAX_DESENSITIZE_CHARS && (
                   <p className="text-xs text-muted-foreground mt-2 text-center">
-                    ... (还有 {originalText.length - 50000} 字符未显示)
+                    ... (还有 {originalText.length - MAX_DESENSITIZE_CHARS} 字符未显示)
                   </p>
                 )}
               </div>
