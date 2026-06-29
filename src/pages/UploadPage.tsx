@@ -219,8 +219,9 @@ export function UploadPage() {
     const docBlob = await Packer.toBlob(doc);
     const docZip = await JSZip.loadAsync(docBlob);
 
-    // 2. 加密 mappingTable（用用户设置的密码）
-    const password = downloadPasswordRef.current || 'desensitizer-meta';
+    // 2. 加密 mappingTable（用用户设置的密码；handleDownload 已在调用前弹 modal 确保 password 非空）
+    const password = downloadPasswordRef.current;
+    if (!password) throw new Error('请先设置下载密码');
     const { encrypted, salt, iv } = await cryptoManagerRef.current.encryptMappingTable(mappingTable, password);
 
     // 3. 将 ArrayBuffer 转为 base64

@@ -45,19 +45,6 @@ export class CryptoManager {
     };
   }
 
-  async decryptData(encryptedData: ArrayBuffer, salt: Uint8Array, iv: Uint8Array): Promise<string> {
-    const key = await deriveKey('', salt);
-    const decoder = new TextDecoder();
-
-    const decrypted = await crypto.subtle.decrypt(
-      { name: 'AES-GCM', iv: new Uint8Array(iv) },
-      key,
-      encryptedData
-    );
-
-    return decoder.decode(decrypted);
-  }
-
   async encryptMappingTable(mappingTable: unknown[], password: string): Promise<EncryptedData> {
     const data = JSON.stringify(mappingTable);
     const salt = crypto.getRandomValues(new Uint8Array(16));

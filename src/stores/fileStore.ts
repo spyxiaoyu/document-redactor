@@ -131,7 +131,7 @@ export const useFileStore = create<FileState>((set, get) => ({
 
     if (newMatches.length > 0) {
       const existingIds = new Set(sensitiveMatches.map(m => m.id));
-      const uniqueNewMatches = newMatches.filter(m => !existingIds.has(m.value));
+      const uniqueNewMatches = newMatches.filter(m => !existingIds.has(m.id));
 
       const updatedMatches = [...sensitiveMatches, ...uniqueNewMatches];
       const updatedSelected = new Set(get().selectedMatches);

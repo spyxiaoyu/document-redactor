@@ -103,7 +103,7 @@ export class SensitiveFinder {
           context: extractContext(text, index, 30),
           blockId: undefined
         });
-        index = text.indexOf(keyword, index + 1);
+        index = text.indexOf(keyword, index + keyword.length);
       }
     }
 

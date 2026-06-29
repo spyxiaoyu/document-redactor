@@ -24,26 +24,14 @@ export function FileUploader({ onFileSelect, accept, className }: FileUploaderPr
   const inputRef = useRef<HTMLInputElement>(null);
 
   const handleFileChange = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
-    console.log('[DEBUG] handleFileChange called', e.target.files?.length ?? 0, 'files');
     const file = e.target.files?.[0];
-    if (file) {
-      console.log('[DEBUG] file selected:', file.name, file.type, file.size);
-      onFileSelect(file);
-    } else {
-      console.log('[DEBUG] no file selected');
-    }
+    if (file) onFileSelect(file);
     // Reset so same file can be selected again
     e.target.value = '';
   }, [onFileSelect]);
 
-  const handleClick = useCallback(() => {
-    console.log('[DEBUG] label clicked, input element:', inputRef.current);
-    console.log('[DEBUG] input clickable?', inputRef.current?.click !== undefined);
-  }, []);
-
   return (
     <label
-      onClick={handleClick}
       className={clsx(
         'flex flex-col items-center justify-center rounded-lg border-2 border-dashed border-muted-foreground/25 p-8 transition-colors hover:border-primary/50 cursor-pointer',
         className
