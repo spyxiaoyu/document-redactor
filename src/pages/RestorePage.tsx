@@ -143,22 +143,12 @@ export function RestorePage() {
         throw new Error('无可用恢复数据');
       }
 
-      // embeddedMapping 用逐个替换（处理等长碰撞 + 多次出现）
-      // 每遍替换一个 token，替换后从 maskedToken 边界之后继续搜索
+      // 两种模式都走 desensitizer.restore（两趟替换，鲁棒处理交叉 originalValue / maskedToken）
       let restoredText: string;
-      if (embeddedMapping) {
-        restoredText = desensitizedText;
-        for (const entry of mappingTable) {
-          let searchPos = 0;
-          while (true) {
-            const pos = restoredText.indexOf(entry.maskedToken, searchPos);
-            if (pos < 0) break;
-            restoredText = restoredText.slice(0, pos) + entry.originalValue + restoredText.slice(pos + entry.maskedToken.length);
-            searchPos = pos + entry.maskedToken.length; // 从 maskedToken 边界之后继续，避免在 originalValue 内再次匹配
-          }
-        }
-      } else {
+      if (embeddedMapping || selectedRecord) {
         restoredText = await desensitizer.restore(desensitizedText, mappingTable, password);
+      } else {
+        throw new Error('无可用恢复数据');
       }
 
       if (!embeddedMapping && selectedRecord) {

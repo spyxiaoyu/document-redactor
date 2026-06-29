@@ -55,18 +55,27 @@ export class Desensitizer {
     mappingTable: MappingEntry[],
     _password: string
   ): Promise<string> {
-    let restoredText = desensitizedText;
+    // 两趟替换：
+    // 1) 所有 maskedToken -> 唯一占位符（避免交叉命中，即使是相同长度 token 也安全）
+    // 2) 占位符 -> originalValue
+    // 占位符用 NUL 字符包围，正文几乎不会出现 NUL，从而彻底消除交叉。
+    const PH_PREFIX = '\u0000DSE_';
+    const PH_SUFFIX = '\u0000';
+    const placeholderMap = new Map<string, string>();
+    let stage1 = desensitizedText;
 
-    const sortedEntries = [...mappingTable].sort((a, b) => b.position.start - a.position.start);
-
-    for (const entry of sortedEntries) {
-      restoredText =
-        restoredText.slice(0, entry.position.start) +
-        entry.originalValue +
-        restoredText.slice(entry.position.start + entry.maskedToken.length);
+    for (let i = 0; i < mappingTable.length; i++) {
+      const entry = mappingTable[i];
+      const placeholder = `${PH_PREFIX}${i}_${mappingTable.length}${PH_SUFFIX}`;
+      placeholderMap.set(placeholder, entry.originalValue);
+      stage1 = stage1.split(entry.maskedToken).join(placeholder);
     }
 
-    return restoredText;
+    let stage2 = stage1;
+    for (const [placeholder, originalValue] of placeholderMap) {
+      stage2 = stage2.split(placeholder).join(originalValue);
+    }
+    return stage2;
   }
 
   createMaskedValue(value: string, type: SensitiveType): string {
