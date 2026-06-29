@@ -112,6 +112,9 @@ export function RestorePage() {
       let mappingTable: MappingEntry[];
       let desensitizedText: string;
 
+      // 每个关键 await 前打 step tag，devtools console 能看到哪一步炸了
+      console.log('[RestorePage] step 1/5: decrypt mappingTable');
+
       if (embeddedMapping) {
         // 模式1：DOCX 内嵌元数据恢复
         // 用户密码派生 key，salt+iv 在 metadata XML 中
@@ -126,6 +129,7 @@ export function RestorePage() {
           ivBytes
         ) as MappingEntry[];
 
+        console.log('[RestorePage] step 2/5: mammoth on embedded DOCX');
         // 用 mammoth 在浏览器提取纯文本（file.text() 对 DOCX 返回 ZIP 二进制，是乱码根因）
         const mammoth = await import('mammoth');
         const arrayBuffer = await file!.arrayBuffer();
@@ -140,6 +144,7 @@ export function RestorePage() {
           selectedRecord.iv
         ) as MappingEntry[];
 
+        console.log('[RestorePage] step 2/5: read DB-mode desensitizedText');
         // DOCX 必须走 mammoth；否则 file.text() 拿到的是 ZIP 二进制乱码。
         // 其他格式保持 file.text()。
         if (file!.name.toLowerCase().endsWith('.docx')) {
@@ -154,6 +159,7 @@ export function RestorePage() {
         throw new Error('无可用恢复数据');
       }
 
+      console.log(`[RestorePage] step 3/5: restore text (mappingTable.length=${mappingTable.length})`);
       // 两种模式都走 desensitizer.restore（两趟替换，鲁棒处理交叉 originalValue / maskedToken）
       let restoredText: string;
       if (embeddedMapping || selectedRecord) {
@@ -163,17 +169,25 @@ export function RestorePage() {
       }
 
       if (!embeddedMapping && selectedRecord) {
-        await updateRecordStatus(selectedRecord.id, 'restored');
-        await addAuditLog({
-          id: generateUUID(),
-          timestamp: new Date(),
-          action: 'restore',
-          fileId: selectedRecord.id,
-          fileHash: selectedRecord.fileHash,
-          details: { matchCount: mappingTable.length }
-        });
+        console.log('[RestorePage] step 4/5: updateRecordStatus + addAuditLog');
+        try {
+          await updateRecordStatus(selectedRecord.id, 'restored');
+          await addAuditLog({
+            id: generateUUID(),
+            timestamp: new Date(),
+            action: 'restore',
+            fileId: selectedRecord.id,
+            fileHash: selectedRecord.fileHash,
+            details: { matchCount: mappingTable.length }
+          });
+        } catch (dbErr) {
+          // DB 写入失败不能让用户看到"恢复失败"——restore 已经成功了。
+          // 这里只记日志，不影响主流程。
+          console.warn('[RestorePage] DB audit log failed (non-fatal):', dbErr);
+        }
       }
 
+      console.log('[RestorePage] step 5/5: set state OK');
       setRestoredContent(restoredText);
       setDecryptedMapping(mappingTable);
       setShowPasswordModal(false);
@@ -182,19 +196,21 @@ export function RestorePage() {
       // 之前这里统一翻译成"密码错误或映射表解密失败"把别的错也吞了，
       // 用户根本不知道真凶是 mammoth、restore、还是 DB。
       console.error('[RestorePage] handleRestore failed:', err);
+      console.error('[RestorePage] err.stack:', err?.stack);
 
-      const name: string = err?.name || '';
-      const message: string = err?.message || '';
+      const name: string = err?.name || 'Error';
+      const message: string = err?.message || '(无 message)';
 
       if (name === 'OperationError' || message.toLowerCase().includes('aes-gcm')) {
         // AES-GCM 解密失败的特征错误：AES 解不开
-        setError('密码错误或映射表数据已损坏，请检查密码');
+        setError(`密码错误或映射表数据已损坏，请检查密码 [${name}]`);
       } else if (name === 'TypeError' && message.includes('extractRawText')) {
-        setError('文件不是有效的 DOCX，无法提取文本');
+        setError(`文件不是有效的 DOCX [${name}]: ${message}`);
       } else if (name === 'SyntaxError') {
-        setError('映射表 JSON 解析失败，文件可能已损坏');
+        setError(`映射表 JSON 解析失败，文件可能已损坏 [${name}]: ${message}`);
       } else {
-        setError(`恢复失败: ${name || '未知错误'} — 请打开浏览器 devtools 查看详情`);
+        // 兜底：把 err.message 显示出来给用户（不再遮羞布）。
+        setError(`恢复失败 [${name}]: ${message.slice(0, 200)} — 详细 stack 见 devtools console.error`);
       }
     } finally {
       setIsProcessing(false);
