@@ -226,10 +226,14 @@ export function UploadPage() {
     const { Document, Packer, Paragraph, TextRun } = await import('docx');
 
     // 1. 生成干净 DOCX 内容（用 docx 库）
-    const paragraphs = text.split('\n').map(line =>
-      new Paragraph({ children: [new TextRun(line)] })
-    );
-    const doc = new Document({ sections: [{ children: paragraphs }] });
+    // 关键：mammoth.extractRawText 在段落之间用 '\n\n' 拼接，所以源文本也得按 '\n\n' 切段，
+    // 才能 round-trip 后拿到 byte-for-byte 相同的字符串。如果用 split('\n')，每段间会被 mammoth
+    // 加一个 \n，整个文件的 position 全部错位。
+    const docxChildren = text
+      .split('\n\n')
+      .filter((line, idx, arr) => !(idx === arr.length - 1 && line === ''))  // strip trailing empty para
+      .map(line => new Paragraph({ children: [new TextRun(line)] }));
+    const doc = new Document({ sections: [{ children: docxChildren }] });
     const docBlob = await Packer.toBlob(doc);
     const docZip = await JSZip.loadAsync(docBlob);
 

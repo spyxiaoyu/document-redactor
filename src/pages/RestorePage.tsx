@@ -229,11 +229,13 @@ export function RestorePage() {
     if (isDocx) {
       // 重新打包成 DOCX（恢复后的文本 -> 段落 -> DOCX blob）
       // 已知限制：表格/图片/版式会丢失，只保留段落文字。
+      // 与 UploadPage 保持一致用 '\n\n' 切段，让用户重新读回不会 position 错位。
       const { Document, Packer, Paragraph, TextRun } = await import('docx');
-      const paragraphs = restoredContent.split('\n').map(
-        line => new Paragraph({ children: [new TextRun(line)] })
-      );
-      const doc = new Document({ sections: [{ children: paragraphs }] });
+      const docxChildren = restoredContent
+        .split('\n\n')
+        .filter((line, idx, arr) => !(idx === arr.length - 1 && line === ''))
+        .map(line => new Paragraph({ children: [new TextRun(line)] }));
+      const doc = new Document({ sections: [{ children: docxChildren }] });
       const buffer = await Packer.toBuffer(doc);
       blob = new Blob([new Uint8Array(buffer)], {
         type: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
