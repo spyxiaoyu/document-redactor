@@ -23,6 +23,7 @@ interface RecordMatch {
 export function RestorePage() {
   const [file, setFile] = useState<File | null>(null);
   const [password, setPassword] = useState('');
+  const [downloadStep, setDownloadStep] = useState<string>('');
   const [records, setRecords] = useState<RecordMatch[]>([]);
   const [selectedRecord, setSelectedRecord] = useState<DesensitizationRecord | null>(null);
   const [showRecordModal, setShowRecordModal] = useState(false);
@@ -218,39 +219,39 @@ export function RestorePage() {
   }, [selectedRecord, password, file, embeddedMapping]);
 
   const handleDownload = useCallback(async () => {
-    if (!restoredContent || !selectedRecord) {
-      console.warn('[RestorePage] handleDownload: missing restoredContent or selectedRecord', {
-        hasRestoredContent: !!restoredContent,
-        hasSelectedRecord: !!selectedRecord
-      });
+    if (!restoredContent) {
+      setDownloadStep('⚠️ 没有可下载内容（还没恢复或已重置）');
       return;
     }
+    // 文件名来源：
+    //  - DB 模式：selectedRecord.fileName（用户从历史记录里选的）
+    //  - embeddedMapping 模式：file.name（上传来就有，没有"已脱敏"后缀）
+    const sourceFileName = selectedRecord?.fileName || file?.name || 'restored';
+    const originalFileName = sourceFileName.replace(/_脱敏$/, '');
+    const isDocx = originalFileName.toLowerCase().endsWith('.docx');
+    setDownloadStep(`⏳ 1/5 准备下载（${originalFileName}）...`);
 
     try {
-      const originalFileName = selectedRecord.fileName.replace(/_脱敏$/, '');
-      const isDocx = originalFileName.toLowerCase().endsWith('.docx');
 
       let blob: Blob;
       let filename: string;
 
       if (isDocx) {
-        // 重新打包成 DOCX（恢复后的文本 -> 段落 -> DOCX blob）
-        // 已知限制：表格/图片/版式会丢失，只保留段落文字。
-        // 与 UploadPage 保持一致用 '\n\n' 切段，让用户重新读回不会 position 错位。
+        setDownloadStep('⏳ 2/5 加载 docx 库...');
         const { Document, Packer, Paragraph, TextRun } = await import('docx');
+        setDownloadStep('⏳ 3/5 打包文档...');
         const docxChildren = restoredContent
           .split('\n\n')
           .filter((line, idx, arr) => !(idx === arr.length - 1 && line === ''))
           .map(line => new Paragraph({ children: [new TextRun(line)] }));
         const doc = new Document({ sections: [{ children: docxChildren }] });
-        const buffer = await Packer.toBuffer(doc);
-        blob = new Blob([new Uint8Array(buffer)], {
-          type: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
-        });
+        // 用 toBlob 而不是 toBuffer：toBuffer 在 Node 返回 Buffer，
+        // 浏览器走的是相同的 docx 内部路径 → JSZip 抛 "nodebuffer is not supported by this platform"。
+        // toBlob 是浏览器原生路径，UploadPage 已经验证过可用。
+        blob = await Packer.toBlob(doc);
         filename = originalFileName.replace(/\.docx$/i, '_restored.docx');
       } else {
         blob = new Blob([restoredContent], { type: 'text/plain;charset=utf-8' });
-        // PDF 重新生成前端做不到，转成 .txt；其他格式保持原扩展名 + .txt 后缀
         if (/\.pdf$/i.test(originalFileName)) {
           filename = originalFileName.replace(/\.pdf$/i, '_restored.txt');
         } else if (/\.(txt|md)$/i.test(originalFileName)) {
@@ -260,21 +261,23 @@ export function RestorePage() {
         }
       }
 
+      setDownloadStep(`⏳ 4/5 触发下载（${filename}, ${blob.size} bytes）...`);
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;
       a.download = filename;
+      a.rel = 'noopener';
+      a.style.display = 'none';
       document.body.appendChild(a);
       a.click();
-      document.body.removeChild(a);
-      // 延迟 revoke，等浏览器开始下载再释放
-      setTimeout(() => URL.revokeObjectURL(url), 1000);
+      setDownloadStep(`✅ 5/5 已触发下载（${filename}）。如果 3 秒内没看到浏览器下载条，告诉我。`);
+      setTimeout(() => {
+        if (a.parentNode) a.parentNode.removeChild(a);
+        URL.revokeObjectURL(url);
+      }, 5000);
     } catch (err: any) {
-      // 之前整个 useCallback 没 try-catch，docx 库 import 失败 / Blob 构造失败
-      // 都会被吞掉，点了没反应。现在打到 UI。
+      setDownloadStep(`❌ 失败: ${err?.name || 'Error'}: ${(err?.message || '').slice(0, 100)}`);
       console.error('[RestorePage] handleDownload failed:', err);
-      console.error('[RestorePage] err.stack:', err?.stack);
-      setError(`下载失败 [${err?.name || 'Error'}]: ${(err?.message || '').slice(0, 200)} — 详细 stack 见 devtools console.error`);
     }
   }, [restoredContent, selectedRecord]);
 
@@ -339,6 +342,11 @@ export function RestorePage() {
               继续处理其他文件
             </Button>
           </div>
+          {downloadStep && (
+            <div className="mt-3 text-sm font-mono bg-muted/50 border rounded px-3 py-2 text-foreground">
+              {downloadStep}
+            </div>
+          )}
         </div>
       ) : (
         <div className="space-y-6">
