@@ -24,11 +24,14 @@ export class Desensitizer {
     const mappingTable: MappingEntry[] = [];
 
     // 按原始文本位置升序排列。用 cursor 走原始 text 构建新字符串，
-    // 避免在已替换过的文本上用原 match 位置切分（多 match 时位置会错位）。
+    // 同时用 resultCursor 跟踪 result 中的位置，让 mappingTable.position
+    // 始终指向脱敏后文本里的坐标（与 UploadPage.getDesensitizedText 保持一致，
+    // 这样 restore 用 position-based 替换可以端到端工作）。
     const sortedMatches = [...matches].sort((a, b) => a.start - b.start);
 
     let result = '';
     let cursor = 0;
+    let resultCursor = 0;
     for (let i = 0; i < sortedMatches.length; i++) {
       const match = sortedMatches[i];
       if (match.start < cursor || match.end < match.start) {
@@ -37,7 +40,10 @@ export class Desensitizer {
       }
       const token = generateToken(match.type, i + 1);
 
-      result += text.slice(cursor, match.start) + token;
+      const prefix = text.slice(cursor, match.start);
+      const tokenStartInResult = resultCursor + prefix.length;
+      result += prefix + token;
+      resultCursor = tokenStartInResult + token.length;
       cursor = match.end;
 
       mappingTable.push({
@@ -45,9 +51,10 @@ export class Desensitizer {
         type: match.type,
         originalValue: match.value,
         maskedToken: token,
+        // 位置是脱敏后文本里的坐标；restore 用 start..end 切片+替换 originalValue。
         position: {
-          start: match.start,
-          end: match.start + match.value.length // 记录原值长度，便于复用
+          start: tokenStartInResult,
+          end: tokenStartInResult + token.length
         }
       });
     }
@@ -61,27 +68,29 @@ export class Desensitizer {
     mappingTable: MappingEntry[],
     _password: string
   ): Promise<string> {
-    // 两趟替换：
-    // 1) 所有 maskedToken -> 唯一占位符（避免交叉命中，即使是相同长度 token 也安全）
-    // 2) 占位符 -> originalValue
-    // 占位符用 NUL 字符包围，正文几乎不会出现 NUL，从而彻底消除交叉。
-    const PH_PREFIX = '\u0000DSE_';
-    const PH_SUFFIX = '\u0000';
-    const placeholderMap = new Map<string, string>();
-    let stage1 = desensitizedText;
+    // 按 start 降序处理：后面的先切片+插入，前面的位置不会因长度变化而漂移。
+    // 不依赖 maskedToken 字符串内容，因此 UploadPage 那种 "_".repeat(maskedLen)
+    // 同形 token 也不会被错认（之前的 split+join 是错的根因）。
+    const sorted = [...mappingTable].sort(
+      (a, b) => b.position.start - a.position.start
+    );
 
-    for (let i = 0; i < mappingTable.length; i++) {
-      const entry = mappingTable[i];
-      const placeholder = `${PH_PREFIX}${i}_${mappingTable.length}${PH_SUFFIX}`;
-      placeholderMap.set(placeholder, entry.originalValue);
-      stage1 = stage1.split(entry.maskedToken).join(placeholder);
+    let result = desensitizedText;
+    for (const entry of sorted) {
+      const { start, end } = entry.position;
+      // 兜底：position 越界或非法就跳过（不应该发生，但不让一处坏数据毁整段文本）
+      if (
+        start < 0 ||
+        end > result.length ||
+        start > end ||
+        Number.isNaN(start) ||
+        Number.isNaN(end)
+      ) {
+        continue;
+      }
+      result = result.slice(0, start) + entry.originalValue + result.slice(end);
     }
-
-    let stage2 = stage1;
-    for (const [placeholder, originalValue] of placeholderMap) {
-      stage2 = stage2.split(placeholder).join(originalValue);
-    }
-    return stage2;
+    return result;
   }
 
   createMaskedValue(value: string, type: SensitiveType): string {

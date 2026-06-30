@@ -81,10 +81,10 @@ describe('E2E with real DOCX', () => {
     const { desensitizedText, mappingTable } = await desensitizer.desensitize(originalText, matches, { mode: 'encrypt' });
     console.log(`  脱敏后 ${desensitizedText.length} chars, mappingTable ${mappingTable.length} 项`);
 
-    // Integrity check: mappingTable 的 originalValue 必须能从原文切出来
+    // Integrity check: position 现在是脱敏后坐标，验证 maskedToken 落位
     for (const entry of mappingTable) {
-      const sliceFromOrig = originalText.slice(entry.position.start, entry.position.start + entry.originalValue.length);
-      expect(sliceFromOrig, `mappingTable integrity broken for "${entry.originalValue}"`).toBe(entry.originalValue);
+      const sliceFromDesensitized = desensitizedText.slice(entry.position.start, entry.position.end);
+      expect(sliceFromDesensitized, `mappingTable integrity broken for "${entry.originalValue}"`).toBe(entry.maskedToken);
     }
 
     // 4) 加密 mappingTable
@@ -125,9 +125,11 @@ describe('E2E with real DOCX', () => {
     expect(decrypted.length).toBe(mappingTable.length);
 
     // 8) mammoth 从加密文件提 desensitizedText
-    const extract2 = await mammoth.extractRawText(mammothInput(encBuffer));
-    const desensitizedFromFile = extract2.value;
-    console.log(`  mammoth 从加密文件提的脱敏文本长度 ${desensitizedFromFile.length}`);
+    //    注意：这个测试只改了 metadata，docx body 仍是原文。restore 用的入参是
+    //    desensitizedText（脱敏后文本），不是从 docx 取的——docx body 写回是 UploadPage
+    //    的职责，不在这一层 engine 测试覆盖。
+    const desensitizedFromFile = desensitizedText;
+    console.log(`  使用 desensitizedText 作为 restore 入参，长度 ${desensitizedFromFile.length}`);
 
     // 9) restore
     const restored = await desensitizer.restore(desensitizedFromFile, decrypted, PASSWORD);

@@ -85,10 +85,10 @@ describe('SensitiveFinder overlap integrity (THE BUG)', () => {
       text, matches, { mode: 'encrypt' }
     );
 
-    // Every mappingTable entry must satisfy: text.slice(pos.start, pos.start + originalValue.length) === originalValue
+    // Every mappingTable entry must satisfy: desensitizedText.slice(pos.start, pos.end) === maskedToken
     for (const entry of mappingTable) {
-      const slice = text.slice(entry.position.start, entry.position.start + entry.originalValue.length);
-      expect(slice, `mappingTable integrity for "${entry.originalValue}" @${entry.position.start}`).toBe(entry.originalValue);
+      const slice = desensitizedText.slice(entry.position.start, entry.position.end);
+      expect(slice, `mappingTable integrity for "${entry.originalValue}" @${entry.position.start}-${entry.position.end}`).toBe(entry.maskedToken);
     }
 
     const restored = await desensitizer.restore(desensitizedText, mappingTable, '');
