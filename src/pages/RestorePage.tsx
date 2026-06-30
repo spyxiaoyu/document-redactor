@@ -218,49 +218,64 @@ export function RestorePage() {
   }, [selectedRecord, password, file, embeddedMapping]);
 
   const handleDownload = useCallback(async () => {
-    if (!restoredContent || !selectedRecord) return;
-
-    const originalFileName = selectedRecord.fileName.replace(/_脱敏$/, '');
-    const isDocx = originalFileName.toLowerCase().endsWith('.docx');
-
-    let blob: Blob;
-    let filename: string;
-
-    if (isDocx) {
-      // 重新打包成 DOCX（恢复后的文本 -> 段落 -> DOCX blob）
-      // 已知限制：表格/图片/版式会丢失，只保留段落文字。
-      // 与 UploadPage 保持一致用 '\n\n' 切段，让用户重新读回不会 position 错位。
-      const { Document, Packer, Paragraph, TextRun } = await import('docx');
-      const docxChildren = restoredContent
-        .split('\n\n')
-        .filter((line, idx, arr) => !(idx === arr.length - 1 && line === ''))
-        .map(line => new Paragraph({ children: [new TextRun(line)] }));
-      const doc = new Document({ sections: [{ children: docxChildren }] });
-      const buffer = await Packer.toBuffer(doc);
-      blob = new Blob([new Uint8Array(buffer)], {
-        type: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
+    if (!restoredContent || !selectedRecord) {
+      console.warn('[RestorePage] handleDownload: missing restoredContent or selectedRecord', {
+        hasRestoredContent: !!restoredContent,
+        hasSelectedRecord: !!selectedRecord
       });
-      filename = originalFileName.replace(/\.docx$/i, '_restored.docx');
-    } else {
-      blob = new Blob([restoredContent], { type: 'text/plain;charset=utf-8' });
-      // PDF 重新生成前端做不到，转成 .txt；其他格式保持原扩展名 + .txt 后缀
-      if (/\.pdf$/i.test(originalFileName)) {
-        filename = originalFileName.replace(/\.pdf$/i, '_restored.txt');
-      } else if (/\.(txt|md)$/i.test(originalFileName)) {
-        filename = originalFileName;
-      } else {
-        filename = originalFileName + '.txt';
-      }
+      return;
     }
 
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = filename;
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    URL.revokeObjectURL(url);
+    try {
+      const originalFileName = selectedRecord.fileName.replace(/_脱敏$/, '');
+      const isDocx = originalFileName.toLowerCase().endsWith('.docx');
+
+      let blob: Blob;
+      let filename: string;
+
+      if (isDocx) {
+        // 重新打包成 DOCX（恢复后的文本 -> 段落 -> DOCX blob）
+        // 已知限制：表格/图片/版式会丢失，只保留段落文字。
+        // 与 UploadPage 保持一致用 '\n\n' 切段，让用户重新读回不会 position 错位。
+        const { Document, Packer, Paragraph, TextRun } = await import('docx');
+        const docxChildren = restoredContent
+          .split('\n\n')
+          .filter((line, idx, arr) => !(idx === arr.length - 1 && line === ''))
+          .map(line => new Paragraph({ children: [new TextRun(line)] }));
+        const doc = new Document({ sections: [{ children: docxChildren }] });
+        const buffer = await Packer.toBuffer(doc);
+        blob = new Blob([new Uint8Array(buffer)], {
+          type: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
+        });
+        filename = originalFileName.replace(/\.docx$/i, '_restored.docx');
+      } else {
+        blob = new Blob([restoredContent], { type: 'text/plain;charset=utf-8' });
+        // PDF 重新生成前端做不到，转成 .txt；其他格式保持原扩展名 + .txt 后缀
+        if (/\.pdf$/i.test(originalFileName)) {
+          filename = originalFileName.replace(/\.pdf$/i, '_restored.txt');
+        } else if (/\.(txt|md)$/i.test(originalFileName)) {
+          filename = originalFileName;
+        } else {
+          filename = originalFileName + '.txt';
+        }
+      }
+
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = filename;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      // 延迟 revoke，等浏览器开始下载再释放
+      setTimeout(() => URL.revokeObjectURL(url), 1000);
+    } catch (err: any) {
+      // 之前整个 useCallback 没 try-catch，docx 库 import 失败 / Blob 构造失败
+      // 都会被吞掉，点了没反应。现在打到 UI。
+      console.error('[RestorePage] handleDownload failed:', err);
+      console.error('[RestorePage] err.stack:', err?.stack);
+      setError(`下载失败 [${err?.name || 'Error'}]: ${(err?.message || '').slice(0, 200)} — 详细 stack 见 devtools console.error`);
+    }
   }, [restoredContent, selectedRecord]);
 
   const handleReset = useCallback(() => {
