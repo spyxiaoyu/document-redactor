@@ -1,12 +1,13 @@
 import { clsx } from 'clsx';
 import type { SensitiveMatch, SensitiveType } from '@/types';
 import { SENSITIVE_TYPE_LABELS } from '@/rules';
-import { Eye, EyeOff, Check } from 'lucide-react';
+import { Eye, EyeOff, Check, Trash2 } from 'lucide-react';
 
 interface SensitiveItemProps {
   match: SensitiveMatch;
   isSelected: boolean;
   onToggle: () => void;
+  onRemove: () => void;
 }
 
 const typeColors: Record<SensitiveType, string> = {
@@ -26,14 +27,14 @@ const typeColors: Record<SensitiveType, string> = {
   CUSTOM: 'bg-muted text-muted-foreground',
 };
 
-export function SensitiveItem({ match, isSelected, onToggle }: SensitiveItemProps) {
+export function SensitiveItem({ match, isSelected, onToggle, onRemove }: SensitiveItemProps) {
   const label = SENSITIVE_TYPE_LABELS[match.type] || match.type;
 
   return (
     <div
       className={clsx(
         'flex items-center gap-3 rounded-lg border p-3 transition-colors cursor-pointer',
-        isSelected ? 'border-primary bg-primary/5' : 'border-border hover:bg-muted/50'
+        isSelected ? 'border-primary bg-primary/5' : 'border-border opacity-60 hover:opacity-100'
       )}
       onClick={onToggle}
     >
@@ -62,6 +63,19 @@ export function SensitiveItem({ match, isSelected, onToggle }: SensitiveItemProp
       </div>
 
       <div className="flex gap-1">
+        <button
+          type="button"
+          onClick={(e) => {
+            e.stopPropagation();  // 防止触发外层 onToggle
+            if (confirm(`确定从列表中删除此敏感词？\n\n"${match.value}"\n\n此操作不可撤销。`)) {
+              onRemove();
+            }
+          }}
+          className="p-1 rounded text-muted-foreground hover:text-destructive hover:bg-destructive/10 transition-colors"
+          title="从列表删除（不可恢复）"
+        >
+          <Trash2 className="h-4 w-4" />
+        </button>
         {isSelected ? (
           <Eye className="h-4 w-4 text-primary" />
         ) : (

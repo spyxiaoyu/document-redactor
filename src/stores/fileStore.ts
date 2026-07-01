@@ -37,6 +37,7 @@ interface FileState {
   deselectAllMatches: () => void;
   desensitize: (password: string) => Promise<void>;
   addManualMatch: (text: string) => void;
+  removeMatch: (id: string) => void;
   reset: () => void;
 }
 
@@ -143,6 +144,24 @@ export const useFileStore = create<FileState>((set, get) => ({
         renderKey: get().renderKey + 1
       });
     }
+  },
+
+  /**
+   * 从 matches 列表里彻底删除一个 match（自动或手动都可以删）。
+   * 场景：自动识别有误（如把"纳税人识别号："整段识别成 TAX_ID），
+   * 用户希望从 SensitivePanel 抹掉这个 match，让它既不高亮也不参与脱敏。
+   * 不可恢复（除非重新走 detectSensitive 或 addManualMatch）。
+   */
+  removeMatch: (id) => {
+    const { sensitiveMatches, selectedMatches } = get();
+    const updatedMatches = sensitiveMatches.filter(m => m.id !== id);
+    const updatedSelected = new Set(selectedMatches);
+    updatedSelected.delete(id);
+    set({
+      sensitiveMatches: updatedMatches,
+      selectedMatches: updatedSelected,
+      renderKey: get().renderKey + 1
+    });
   },
 
   desensitize: async (password) => {

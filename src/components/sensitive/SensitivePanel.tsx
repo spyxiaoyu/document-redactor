@@ -10,6 +10,7 @@ interface SensitivePanelProps {
   onToggle: (id: string) => void;
   onSelectAll: () => void;
   onDeselectAll: () => void;
+  onRemove: (id: string) => void;
 }
 
 export function SensitivePanel({
@@ -17,7 +18,8 @@ export function SensitivePanel({
   selectedIds,
   onToggle,
   onSelectAll,
-  onDeselectAll
+  onDeselectAll,
+  onRemove
 }: SensitivePanelProps) {
   const groupedByType = matches.reduce((acc, match) => {
     if (!acc[match.type]) acc[match.type] = [];
@@ -76,6 +78,7 @@ export function SensitivePanel({
                     match={match}
                     isSelected={selectedIds.has(match.id)}
                     onToggle={() => onToggle(match.id)}
+                    onRemove={() => onRemove(match.id)}
                   />
                 ))}
               </div>

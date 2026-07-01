@@ -86,7 +86,9 @@ export const BUILTIN_RULES: BuiltinRuleDefinition[] = [
   },
   {
     type: 'TAX_ID',
-    pattern: /(?:纳税人识别号|税号|税务登记号|TIN)\s*[:：]?\s*[A-Z0-9]{15,20}/gi,
+    // capture group 提取税号本体：[A-Z0-9]{15,20} 是 match[1]
+    // SensitiveFinder.ts:69-72 会用 match[1] 作为 value，这样"纳税人识别号："作为 label 保留不脱敏
+    pattern: /(?:纳税人识别号|税号|税务登记号|TIN)\s*[:：]?\s*([A-Z0-9]{15,20})/gi,
     weight: 0.92,
     description: '纳税人识别号'
   }

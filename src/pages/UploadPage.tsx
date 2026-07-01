@@ -30,6 +30,7 @@ export function UploadPage() {
     deselectAllMatches,
     desensitize,
     addManualMatch,
+    removeMatch,
     reset
   } = storeState;
 
@@ -379,14 +380,17 @@ export function UploadPage() {
       const isSelected = localSelected.has(match.id);
 
       if (isOriginal) {
+        // unselected match 在原文不渲染（让位给新加的 CUSTOM match 高亮）：
+        // 否则老 match 的 lastEnd 会遮蔽内部的子串渲染，导致"取消高亮后无法再次部分勾选"
+        // 注意：match 仍在 matches 列表里保留，SensitivePanel 仍可见，二次勾选可恢复
+        if (!isSelected) {
+          continue;
+        }
         parts.push(
           <span
             key={`match-${key++}`}
-            className={isSelected
-              ? `px-0.5 py-0.5 rounded cursor-pointer bg-yellow-200 dark:bg-yellow-800 dark:text-yellow-200 hover:bg-yellow-300 dark:hover:bg-yellow-700 ring-2 ring-primary`
-              : `px-0.5 py-0.5 rounded cursor-pointer text-muted-foreground opacity-60 hover:opacity-100 underline decoration-dashed`
-            }
-            title={`${match.type} - ${Math.round(match.confidence * 100)}}%`}
+            className="px-0.5 py-0.5 rounded cursor-pointer bg-yellow-200 dark:bg-yellow-800 dark:text-yellow-200 hover:bg-yellow-300 dark:hover:bg-yellow-700 ring-2 ring-primary"
+            title={`${match.type} - ${Math.round(match.confidence * 100)}%`}
             onClick={() => toggleMatchSelection(match.id)}
           >
             {match.value}
@@ -625,6 +629,7 @@ export function UploadPage() {
             onToggle={toggleMatchSelection}
             onSelectAll={selectAllMatches}
             onDeselectAll={deselectAllMatches}
+            onRemove={removeMatch}
           />
         )}
 
