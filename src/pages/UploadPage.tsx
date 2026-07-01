@@ -7,6 +7,7 @@ import { Shield, Download, Lock, RefreshCw, Plus, Search, Check, MousePointer2 }
 import type { SensitiveMatch, MappingEntry } from '@/types';
 import { CryptoManager } from '@/engines/CryptoManager';
 import { generateUUID } from '@/utils';
+import { buildHighlightParts } from '@/utils/highlight';
 import { writeDocxFromEdits } from '@/utils/docxZipWriter';
 
 const MAX_DESENSITIZE_CHARS = 500_000;
@@ -361,70 +362,34 @@ export function UploadPage() {
     setTimeout(() => setToast(null), 2000);
   }, [selectedText, addManualMatch]);
 
-  // 高亮敏感词
-  const highlightText = useCallback((text: string, matches: SensitiveMatch[], isOriginal: boolean) => {
+  // 渲染高亮 parts 为 JSX（基于 utils/highlight.ts 的 buildHighlightParts 纯函数）
+  // unselected match 在纯函数里就已是 text kind，所以这里只关心 text / match 两种 case
+  const renderHighlightParts = useCallback((text: string, matches: SensitiveMatch[], isOriginal: boolean) => {
     if (!text) return [];
-
-    const sortedMatches = [...matches].sort((a, b) => a.start - b.start);
-    const parts: JSX.Element[] = [];
-    let lastEnd = 0;
-    let key = 0;
-
-    for (const match of sortedMatches) {
-      if (match.start < lastEnd) continue;
-
-      if (match.start > lastEnd) {
-        parts.push(<span key={`text-${key++}`}>{text.slice(lastEnd, match.start)}</span>);
+    const parts = buildHighlightParts(text, matches, localSelected, isOriginal);
+    return parts.map((part, idx) => {
+      if (part.kind === 'text') {
+        return <span key={`text-${idx}`}>{part.text}</span>;
       }
-
-      const isSelected = localSelected.has(match.id);
-
-      if (isOriginal) {
-        // unselected match 在原文不渲染（让位给新加的 CUSTOM match 高亮）：
-        // 否则老 match 的 lastEnd 会遮蔽内部的子串渲染，导致"取消高亮后无法再次部分勾选"
-        // 注意：match 仍在 matches 列表里保留，SensitivePanel 仍可见，二次勾选可恢复
-        if (!isSelected) {
-          continue;
-        }
-        parts.push(
-          <span
-            key={`match-${key++}`}
-            className="px-0.5 py-0.5 rounded cursor-pointer bg-yellow-200 dark:bg-yellow-800 dark:text-yellow-200 hover:bg-yellow-300 dark:hover:bg-yellow-700 ring-2 ring-primary"
-            title={`${match.type} - ${Math.round(match.confidence * 100)}%`}
-            onClick={() => toggleMatchSelection(match.id)}
-          >
-            {match.value}
-          </span>
-        );
-      } else {
-        if (isSelected) {
-          parts.push(
-            <span
-              key={`match-${key++}`}
-              className="border-b border-black text-transparent cursor-pointer inline-block min-w-[1ch]"
-              title={`已脱敏: ${match.type}`}
-              onClick={() => toggleMatchSelection(match.id)}
-            >
-              {'\u00a0'.repeat(match.value.length)}
-            </span>
-          );
-        } else {
-          parts.push(
-            <span key={`match-${key++}`}>
-              {match.value}
-            </span>
-          );
-        }
-      }
-
-      lastEnd = match.end;
-    }
-
-    if (lastEnd < text.length) {
-      parts.push(<span key={`text-${key++}`}>{text.slice(lastEnd)}</span>);
-    }
-
-    return parts;
+      // part.kind === 'match'：仅 selected 命中此分支（unselected 已被 buildHighlightParts 降级为 text）
+      const onClick = () => toggleMatchSelection(part.matchId);
+      const className = isOriginal
+        ? "px-0.5 py-0.5 rounded cursor-pointer bg-yellow-200 dark:bg-yellow-800 dark:text-yellow-200 hover:bg-yellow-300 dark:hover:bg-yellow-700 ring-2 ring-primary"
+        : "border-b border-black text-transparent cursor-pointer inline-block min-w-[1ch]";
+      const title = isOriginal
+        ? `${part.type} - ${Math.round(part.confidence * 100)}%`
+        : `已脱敏: ${part.type}`;
+      return (
+        <span
+          key={`match-${part.matchId}-${idx}`}
+          className={className}
+          title={title}
+          onClick={onClick}
+        >
+          {part.text}
+        </span>
+      );
+    });
   }, [toggleMatchSelection, localSelected, renderKey]);
 
   const originalText = parsedDocument?.rawText || '';
@@ -567,7 +532,7 @@ export function UploadPage() {
                 onScroll={handleOriginalScroll}
               >
                 <pre className="whitespace-pre-wrap text-sm font-medio leading-relaxed">
-                  {highlightText(previewText, sensitiveMatches, true)}
+                  {renderHighlightParts(previewText, sensitiveMatches, true)}
                 </pre>
                 {addBtnPos && selectedText && (
                   <button
@@ -607,7 +572,7 @@ export function UploadPage() {
               >
                 {originalText ? (
                   <pre className="whitespace-pre-wrap text-sm leading-relaxed">
-                    {highlightText(previewText, sensitiveMatches, false)}
+                    {renderHighlightParts(previewText, sensitiveMatches, false)}
                   </pre>
                 ) : (
                   <div className="flex flex-col items-center justify-center h-[200px] text-muted-foreground">
