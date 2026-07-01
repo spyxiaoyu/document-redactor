@@ -103,7 +103,7 @@ export const useFileStore = create<FileState>((set, get) => ({
   deselectAllMatches: () => set({ selectedMatches: new Set(), renderKey: get().renderKey + 1 }),
 
   addManualMatch: (text) => {
-    const { parsedDocument, sensitiveMatches } = get();
+    const { parsedDocument } = get();
     if (!parsedDocument || !text) return;
 
     const rawText = parsedDocument.rawText;
@@ -131,15 +131,27 @@ export const useFileStore = create<FileState>((set, get) => ({
     }
 
     if (newMatches.length > 0) {
-      const existingIds = new Set(sensitiveMatches.map(m => m.id));
-      const uniqueNewMatches = newMatches.filter(m => !existingIds.has(m.id));
+      const { sensitiveMatches: prev, selectedMatches: prevSelected } = get();
 
-      const updatedMatches = [...sensitiveMatches, ...uniqueNewMatches];
-      const updatedSelected = new Set(get().selectedMatches);
-      uniqueNewMatches.forEach(m => updatedSelected.add(m.id));
+      // 删除与新 match 区间重叠的所有老 match。
+      // 根因（spy 截图 bug）：用户取消 ADDRESS 高亮后用搜索框 addManualMatch 同段，
+      // 新 CUSTOM 与老 ADDRESS 完全重叠（start/end 相同）。
+      // buildHighlightParts 排序后遍历：老 match 先 unselected 推进 lastEnd=end，
+      // 新 match start<lastEnd 被 SKIP overlap → 永远不渲染、不脱敏。
+      // 修法：把重叠区间的所有老 match 清掉，只保留新 CUSTOM。
+      const newRanges = newMatches.map(m => ({ start: m.start, end: m.end }));
+      const overlaps = (m: SensitiveMatch) =>
+        newRanges.some(r => m.start < r.end && m.end > r.start);
+
+      const removedOld = prev.filter(overlaps);
+      const filteredOld = prev.filter(m => !overlaps(m));
+
+      const updatedSelected = new Set(prevSelected);
+      removedOld.forEach(m => updatedSelected.delete(m.id));
+      newMatches.forEach(m => updatedSelected.add(m.id));
 
       set({
-        sensitiveMatches: updatedMatches,
+        sensitiveMatches: [...filteredOld, ...newMatches],
         selectedMatches: updatedSelected,
         renderKey: get().renderKey + 1
       });
