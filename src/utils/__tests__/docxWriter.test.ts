@@ -8,10 +8,8 @@ import { describe, it, expect } from 'vitest';
 import fs from 'fs';
 import {
   readDocxFromArrayBuffer,
-  extractTextNodes,
-  locateTokenInTextNodes,
 } from '../docxZipReader';
-import { applyDocxEdits, type DocxEdit } from '../docxWriter';
+import { applyDocxEdits } from '../docxWriter';
 
 const SRC = '<repo-path>/模板/SAMPLE-CT-002-知识产权服务框架协议-SAMPLE-CO-Z.docx';
 

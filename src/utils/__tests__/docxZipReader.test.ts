@@ -8,14 +8,8 @@ import { describe, it, expect } from 'vitest';
 import fs from 'fs';
 import {
   readDocxFromArrayBuffer,
-  extractTextNodes,
   locateTokenInTextNodes,
-  type DocxReadResult,
 } from '../docxZipReader';
-import { Desensitizer } from '@/engines/Desensitizer';
-import { CryptoManager } from '@/engines/CryptoManager';
-import { SensitiveFinder } from '@/engines/SensitiveFinder';
-import { BUILTIN_RULES } from '@/rules/BuiltinRules';
 import mammoth from 'mammoth';
 
 const SRC = '<repo-path>/模板/SAMPLE-CT-002-知识产权服务框架协议-SAMPLE-CO-Z.docx';
@@ -58,7 +52,7 @@ describe('B0: DocxZipReader prototype on user real docx', () => {
     // 必须有 document.xml
     expect(result.fileNames).toContain('word/document.xml');
     // mammoth extractRawText 也要能读出来（确认 docx 没破）
-    const extract = await mammoth.extractRawText({ buffer: toArrayBuffer(buf) });
+    const extract = await mammoth.extractRawText(mammothInput(buf));
     expect(result.concatenatedText.length).toBeGreaterThan(0);
     console.log(`\n  mammoth text len: ${extract.value.length}`);
     console.log(`  zipReader text len: ${result.concatenatedText.length}`);

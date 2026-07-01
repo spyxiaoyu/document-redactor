@@ -47,7 +47,10 @@ function scanNodes(documentXml: string): PositionedTextNode[] {
   let pos = 0;
   let idx = 0;
   while (pos < documentXml.length) {
-    const openStart = documentXml.indexOf('<w:t', pos);
+    // 关键：必须精确匹配 <w:t> 或 <w:t ...>（含属性），避免误匹配 <w:tc>、<w:tcPr>、
+    // <w:tbl>、<w:tblGrid>、<w:tblPr>、<w:tab/> 等所有以 <w:t 开头的标签。
+    // 这些标签的 "inner text" 是表格/XML 结构，被误识别为 w:t 会导致 covering 范围错乱。
+    const openStart = findWTextOpen(documentXml, pos);
     if (openStart === -1) break;
     const openTagEnd = documentXml.indexOf('>', openStart);
     if (openTagEnd === -1) break;
@@ -73,6 +76,26 @@ function scanNodes(documentXml: string): PositionedTextNode[] {
     pos = closeStart + '</w:t>'.length;
   }
   return result;
+}
+
+/**
+ * 找下一个真正的 <w:t> 或 <w:t ...> 起始位置。
+ * 跳过 <w:tc>、<w:tbl>、<w:tblPr> 等以 <w:t 开头但不是 <w:t> 的标签。
+ */
+function findWTextOpen(xml: string, from: number): number {
+  let pos = from;
+  while (pos < xml.length) {
+    const idx = xml.indexOf('<w:t', pos);
+    if (idx === -1) return -1;
+    const char5 = xml[idx + 4]; // <w:t> 后面那个字符：'>' 或 ' ' 或 其他
+    if (char5 === '>' || char5 === ' ' || char5 === '/' || char5 === '\t' || char5 === '\n') {
+      // 真正的 w:t 起始
+      return idx;
+    }
+    // 不是 w:t（可能是 <w:tc>、<w:tbl> 等），跳过这个匹配继续找
+    pos = idx + 4;
+  }
+  return -1;
 }
 
 function applyOneEdit(documentXml: string, edit: DocxEdit): string {
@@ -122,7 +145,7 @@ function applyOneOccurrence(
   if (covering.length === 1) {
     return replaceSingleNode(documentXml, covering[0], globalStart, maskedToken, originalValue);
   }
-  return mergeRunsForCoverage(documentXml, covering, maskedToken, originalValue, globalStart, globalEnd);
+  return mergeRunsForCoverage(documentXml, covering, maskedToken, originalValue);
 }
 
 /**
@@ -162,8 +185,6 @@ function mergeRunsForCoverage(
   covering: PositionedTextNode[],
   maskedToken: string,
   originalValue: string,
-  globalStart: number,
-  globalEnd: number,
 ): string {
   const first = covering[0];
   const last = covering[covering.length - 1];

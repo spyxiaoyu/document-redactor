@@ -237,18 +237,19 @@ export function RestorePage() {
       let filename: string;
 
       if (isDocx) {
-        setDownloadStep('⏳ 2/5 加载 docx 库...');
-        const { Document, Packer, Paragraph, TextRun } = await import('docx');
-        setDownloadStep('⏳ 3/5 打包文档...');
-        const docxChildren = restoredContent
-          .split('\n\n')
-          .filter((line, idx, arr) => !(idx === arr.length - 1 && line === ''))
-          .map(line => new Paragraph({ children: [new TextRun(line)] }));
-        const doc = new Document({ sections: [{ children: docxChildren }] });
-        // 用 toBlob 而不是 toBuffer：toBuffer 在 Node 返回 Buffer，
-        // 浏览器走的是相同的 docx 内部路径 → JSZip 抛 "nodebuffer is not supported by this platform"。
-        // toBlob 是浏览器原生路径，UploadPage 已经验证过可用。
-        blob = await Packer.toBlob(doc);
+        setDownloadStep('⏳ 2/5 在原 docx 字节上替换 token (B 方案，保留原结构)...');
+        const { writeDocxFromEdits } = await import('@/utils/docxZipWriter');
+        const arrayBuffer = await file!.arrayBuffer();
+        // edits: maskedToken → originalValue（恢复方向）
+        const edits = (decryptedMapping || []).map(e => ({
+          maskedToken: e.maskedToken,
+          originalValue: e.originalValue,
+        }));
+        setDownloadStep(`⏳ 3/5 应用 ${edits.length} 处替换...`);
+        const restoredBuffer = await writeDocxFromEdits(arrayBuffer, edits);
+        blob = new Blob([restoredBuffer], {
+          type: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+        });
         filename = originalFileName.replace(/\.docx$/i, '_restored.docx');
       } else {
         blob = new Blob([restoredContent], { type: 'text/plain;charset=utf-8' });
@@ -279,7 +280,7 @@ export function RestorePage() {
       setDownloadStep(`❌ 失败: ${err?.name || 'Error'}: ${(err?.message || '').slice(0, 100)}`);
       console.error('[RestorePage] handleDownload failed:', err);
     }
-  }, [restoredContent, selectedRecord]);
+  }, [restoredContent, selectedRecord, decryptedMapping, file]);
 
   const handleReset = useCallback(() => {
     setFile(null);

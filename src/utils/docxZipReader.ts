@@ -4,14 +4,11 @@
  * 不解 OOXML 全树，只关心 <w:t>...</w:t> 节点的文本内容，按出现顺序拼起来，
  * 拿到每个 w:t 节点在"拼好全文"里的起止位置。
  *
- * 用正则而不是 DOMParser：
+ * 用手写扫描器而不是正则：
  *   - DOMParser(text/html) 不认 namespace 前缀，w:t 拿不到
  *   - DOMParser(application/xml) 在 jsdom 行为不一致，浏览器原生则 OK
- *   - 正则只关心 <w:t> 内容 + 上一个 </w:t> 边界，对我们的需求（替换文本节点字符串）够用
+ *   - 正则跨节点边界匹配会出错（嵌套/转义），手写 indexOf 边界清晰
  */
-
-const W_T_OPEN = /<w:t(?:\s[^>]*)?>/g;
-const W_T_CLOSE = /<\/w:t>/g;
 
 export interface TextNodeInfo {
   /** 在 w:t 节点数组里的下标 */
@@ -67,11 +64,11 @@ export function extractTextNodes(documentXml: string): TextNodeInfo[] {
   // 用一个手写扫描器，避免正则跨节点边界时出错（例如嵌套/转义）
   let pos = 0;
   while (pos < documentXml.length) {
-    const openStart = documentXml.indexOf('<w:t', pos);
+    // 关键：必须精确匹配 <w:t> 或 <w:t ...>（含属性），避免误匹配 <w:tc>、<w:tbl>、
+    // <w:tblGrid>、<w:tblPr>、<w:tab/> 等所有以 <w:t 开头的标签。
+    const openStart = findWTextOpen(documentXml, pos);
     if (openStart === -1) break;
 
-    // 跳过 <w:tbl /> 这类 self-closing 的情况（这些不算 w:t 节点，是 w:tbl 表格标签）
-    const selfCloseEnd = documentXml.indexOf('/>', openStart);
     const openTagEnd = documentXml.indexOf('>', openStart);
     if (openTagEnd === -1) break;
 
@@ -97,6 +94,24 @@ export function extractTextNodes(documentXml: string): TextNodeInfo[] {
   }
 
   return nodes;
+}
+
+/**
+ * 找下一个真正的 <w:t> 或 <w:t ...> 起始位置。
+ * 跳过 <w:tc>、<w:tbl>、<w:tblPr> 等以 <w:t 开头但不是 <w:t> 的标签。
+ */
+function findWTextOpen(xml: string, from: number): number {
+  let pos = from;
+  while (pos < xml.length) {
+    const idx = xml.indexOf('<w:t', pos);
+    if (idx === -1) return -1;
+    const char5 = xml[idx + 4]; // <w:t> 后面那个字符：'>' 或 ' ' 或 '/'
+    if (char5 === '>' || char5 === ' ' || char5 === '/' || char5 === '\t' || char5 === '\n') {
+      return idx;
+    }
+    pos = idx + 4;
+  }
+  return -1;
 }
 
 /**

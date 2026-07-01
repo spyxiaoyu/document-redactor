@@ -7,6 +7,7 @@ import { Shield, Download, Lock, RefreshCw, Plus, Search, Check, MousePointer2 }
 import type { SensitiveMatch, MappingEntry } from '@/types';
 import { CryptoManager } from '@/engines/CryptoManager';
 import { generateUUID } from '@/utils';
+import { writeDocxFromEdits } from '@/utils/docxZipWriter';
 
 const MAX_DESENSITIZE_CHARS = 500_000;
 
@@ -21,6 +22,7 @@ export function UploadPage() {
     desensitizedContent,
     isProcessing,
     error,
+    mappingTable: storeMappingTable,
     setFile,
     parseFile,
     toggleMatchSelection,
@@ -166,9 +168,10 @@ export function UploadPage() {
       const blob = new Blob([text], { type: 'text/plain' });
       triggerDownload(blob, parsedDocument!.ast.metadata.fileName.replace(/\.[^.]+$/, '') + '_脱敏.txt');
     } else {
-      await buildDesensitizedDocx(text, mappingTable, parsedDocument!.ast.metadata.fileName);
+      const originalArrayBuffer = currentFile ? await currentFile.arrayBuffer() : null;
+      await buildDesensitizedDocx(text, mappingTable, parsedDocument!.ast.metadata.fileName, originalArrayBuffer);
     }
-  }, [password, confirmPassword, parsedDocument, localSelected, sensitiveMatches, exportFormat]);
+  }, [password, confirmPassword, parsedDocument, localSelected, sensitiveMatches, exportFormat, currentFile]);
 
   const handleDownload = useCallback(async () => {
     if (!parsedDocument) return;
@@ -212,43 +215,42 @@ export function UploadPage() {
       triggerDownload(blob, parsedDocument.ast.metadata.fileName.replace(/\.[^.]+$/, '') + '_脱敏.txt');
     } else {
       // docx / original：生成带内嵌元数据的 DOCX
-      await buildDesensitizedDocx(text, mappingTable, parsedDocument.ast.metadata.fileName);
+      const originalArrayBuffer = currentFile ? await currentFile.arrayBuffer() : null;
+      await buildDesensitizedDocx(text, mappingTable, parsedDocument.ast.metadata.fileName, originalArrayBuffer);
     }
-  }, [exportFormat, parsedDocument, localSelected, sensitiveMatches]);
+  }, [exportFormat, parsedDocument, localSelected, sensitiveMatches, currentFile]);
 
   // 生成带内嵌元数据的 DOCX（mappingTable 加密存储在 docProps/desensitizer.xml）
+  // B 方案主路径：在原 docx 字节上做 token → originalValue 替换，保留原表格/页眉/页脚/字体；
+  // 失败兜底：原字节缺失/非 docx 时，fallback 到 docx 库从零重建（保留当前兜底行为）。
   const buildDesensitizedDocx = async (
     text: string,
     mappingTable: MappingEntry[],
-    originalFileName: string
+    originalFileName: string,
+    originalArrayBuffer: ArrayBuffer | null
   ) => {
-    const JSZip = (await import('jszip')).default;
-    const { Document, Packer, Paragraph, TextRun } = await import('docx');
-
-    // 1. 生成干净 DOCX 内容（用 docx 库）
-    // 关键：mammoth.extractRawText 在段落之间用 '\n\n' 拼接，所以源文本也得按 '\n\n' 切段，
-    // 才能 round-trip 后拿到 byte-for-byte 相同的字符串。如果用 split('\n')，每段间会被 mammoth
-    // 加一个 \n，整个文件的 position 全部错位。
-    const docxChildren = text
-      .split('\n\n')
-      .filter((line, idx, arr) => !(idx === arr.length - 1 && line === ''))  // strip trailing empty para
-      .map(line => new Paragraph({ children: [new TextRun(line)] }));
-    const doc = new Document({ sections: [{ children: docxChildren }] });
-    const docBlob = await Packer.toBlob(doc);
-    const docZip = await JSZip.loadAsync(docBlob);
-
-    // 2. 加密 mappingTable（用用户设置的密码；handleDownload 已在调用前弹 modal 确保 password 非空）
     const password = downloadPasswordRef.current;
     if (!password) throw new Error('请先设置下载密码');
-    const { encrypted, salt, iv } = await cryptoManagerRef.current.encryptMappingTable(mappingTable, password);
 
-    // 3. 将 ArrayBuffer 转为 base64
+    // 0. 优先用 store 里的 unique token（[NAME_0001] 格式），fallback 才用 caller 传入的（'_'.repeat）
+    //    这样加密 docx 里的脱敏 token 是统一格式，跨文件一致。
+    const effectiveMappingTable: MappingEntry[] =
+      storeMappingTable.length > 0 ? storeMappingTable : mappingTable;
+
+    // 1. 把 mappingTable 里 maskedToken → originalValue 反过来作为 edit
+    //    (B 方案: 把原 docx 里的原值替换为 token，得到加密 docx)
+    const edits = effectiveMappingTable
+      .filter(e => e.originalValue && e.maskedToken)
+      .map(e => ({ maskedToken: e.originalValue, originalValue: e.maskedToken }));
+
+    // 2. 加密 mappingTable（优先用 effectiveMappingTable，与加密 docx body 对齐）
+    const { encrypted, salt, iv } = await cryptoManagerRef.current.encryptMappingTable(effectiveMappingTable, password);
+
+    // 3. 把元数据加密结果转 base64 + 生成 metaXml
     const toBase64 = (buf: ArrayBuffer) => btoa(String.fromCharCode(...new Uint8Array(buf)));
     const saltB64 = toBase64(salt.buffer as ArrayBuffer);
     const ivB64 = toBase64(iv.buffer as ArrayBuffer);
     const dataB64 = toBase64(encrypted);
-
-    // 4. 生成 docProps/desensitizer.xml
     const metaXml = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <DesensitizerMeta xmlns="http://desensitizer.app/meta">
   <version>1</version>
@@ -258,27 +260,47 @@ export function UploadPage() {
   <data>${dataB64}</data>
 </DesensitizerMeta>`;
 
-    // 5. 更新 Content_Types.xml（添加 desensitizer.xml）
-    const ctOrig = await docZip.file('[Content_Types].xml')?.async('string') || '';
-    const ctWithMeta = ctOrig.includes('desensitizer.xml')
-      ? ctOrig
-      : ctOrig.replace('</Types>', '<Override PartName="/docProps/desensitizer.xml" ContentType="application/xml"/></Types>');
+    const injectMetaToZip = async (inputArrayBuffer: ArrayBuffer): Promise<Blob> => {
+      const JSZip = (await import('jszip')).default;
+      const zip = await JSZip.loadAsync(inputArrayBuffer);
+      const ctOrig = await zip.file('[Content_Types].xml')?.async('string') || '';
+      const ctWithMeta = ctOrig.includes('desensitizer.xml')
+        ? ctOrig
+        : ctOrig.replace('</Types>', '<Override PartName="/docProps/desensitizer.xml" ContentType="application/xml"/></Types>');
+      const relsOrig = await zip.file('_rels/.rels')?.async('string') || '';
+      const relsWithMeta = relsOrig.includes('desensitizer.xml')
+        ? relsOrig
+        : relsOrig.replace('</Relationships>', '<Relationship Id="rId_desensitizer" Type="http://desensitizer.app/relationships/metadata" Target="docProps/desensitizer.xml"/></Relationships>');
+      zip.file('[Content_Types].xml', ctWithMeta);
+      zip.file('_rels/.rels', relsWithMeta);
+      zip.file('docProps/desensitizer.xml', metaXml);
+      return await zip.generateAsync({
+        type: 'blob',
+        mimeType: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
+      });
+    };
 
-    // 6. 更新 _rels/.rels（添加 desensitizer.xml 关系）
-    const relsOrig = await docZip.file('_rels/.rels')?.async('string') || '';
-    const relsWithMeta = relsOrig.includes('desensitizer.xml')
-      ? relsOrig
-      : relsOrig.replace('</Relationships>', '<Relationship Id="rId_desensitizer" Type="http://desensitizer.app/relationships/metadata" Target="docProps/desensitizer.xml"/></Relationships>');
+    // 3. 主路径：B 方案在原 docx 字节上做 token 替换，保留原结构
+    if (originalArrayBuffer && originalArrayBuffer.byteLength > 0) {
+      try {
+        const maskedArrayBuffer = await writeDocxFromEdits(originalArrayBuffer, edits);
+        const blob = await injectMetaToZip(maskedArrayBuffer);
+        triggerDownload(blob, originalFileName.replace(/\.[^.]+$/, '') + '_脱敏.docx');
+        return;
+      } catch (err) {
+        console.warn('[buildDesensitizedDocx] B 方案失败，fallback 到 docx 库重建:', err);
+      }
+    }
 
-    // 7. 写入文件并生成新 DOCX
-    docZip.file('[Content_Types].xml', ctWithMeta);
-    docZip.file('_rels/.rels', relsWithMeta);
-    docZip.file('docProps/desensitizer.xml', metaXml);
-
-    const blob = await docZip.generateAsync({
-      type: 'blob',
-      mimeType: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
-    });
+    // 4. 兜底：原字节缺失/非 docx/替换失败 → docx 库从零重建（保留旧行为，丢结构）
+    const { Document, Packer, Paragraph, TextRun } = await import('docx');
+    const docxChildren = text
+      .split('\n\n')
+      .filter((line, idx, arr) => !(idx === arr.length - 1 && line === ''))
+      .map(line => new Paragraph({ children: [new TextRun(line)] }));
+    const doc = new Document({ sections: [{ children: docxChildren }] });
+    const docBlob = await Packer.toBlob(doc);
+    const blob = await injectMetaToZip(await docBlob.arrayBuffer());
     triggerDownload(blob, originalFileName.replace(/\.[^.]+$/, '') + '_脱敏.docx');
   };
 
