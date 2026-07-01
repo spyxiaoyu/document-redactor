@@ -125,11 +125,40 @@ function scanNodes(documentXml: string): PositionedTextNode[] {
     // 关键：必须精确匹配 <w:t> 或 <w:t ...>（含属性），避免误匹配 <w:tc>、<w:tcPr>、
     // <w:tbl>、<w:tblGrid>、<w:tblPr>、<w:tab/> 等所有以 <w:t 开头的标签。
     // 这些标签的 "inner text" 是表格/XML 结构，被误识别为 w:t 会导致 covering 范围错乱。
-    const openStart = findWTextOpen(documentXml, pos);
-    if (openStart === -1) break;
+    const tStart = findWTextOpen(documentXml, pos);
+    // 同时识别下一个 <w:br/>（self-closing）作为 \n 伪节点，与 mammoth 语义对齐：
+    // mammoth extractRawText 在 w:br 处输出 \n，所以 scanNodes 的 concatenatedText
+    // 也必须在 w:br 处插入 \n，否则 indexOf 永远找不到含 \n 的 maskedToken
+    // （例如 spy 真实 docx 里 "费用\n4.1" 这种跨软换行的 AMOUNT 字段）。
+    const brStart = findNextSelfClosingWBr(documentXml, pos);
+
+    if (tStart === -1 && brStart === -1) break;
+
+    // 取较近的：t 节点和 br 节点都可能先出现
+    const isBr =
+      brStart !== -1 && (tStart === -1 || brStart < tStart);
+
+    if (isBr) {
+      const brEnd = documentXml.indexOf('>', brStart) + 1;
+      result.push({
+        idx: idx++,
+        text: '\n',
+        globalStart: globalCursor,
+        globalEnd: globalCursor + 1,
+        xmlOpenStart: brStart,
+        xmlOpenEnd: brEnd,
+        xmlCloseStart: brStart,
+        xmlCloseEnd: brEnd,
+      });
+      globalCursor += 1;
+      pos = brEnd;
+      continue;
+    }
+
+    const openStart = tStart;
     const openTagEnd = documentXml.indexOf('>', openStart);
     if (openTagEnd === -1) break;
-    // self-closing? skip
+    // self-closing w:t? skip
     if (documentXml[openTagEnd - 1] === '/') {
       pos = openTagEnd + 1;
       continue;
@@ -151,6 +180,34 @@ function scanNodes(documentXml: string): PositionedTextNode[] {
     pos = closeStart + '</w:t>'.length;
   }
   return result;
+}
+
+/**
+ * 找下一个真正的 <w:br/> 或 <w:br .../> self-closing 起始位置。
+ * 跳过 <w:break> 之类以 <w:br 开头但不是 br 标签的情况。
+ */
+function findNextSelfClosingWBr(xml: string, from: number): number {
+  let pos = from;
+  while (pos < xml.length) {
+    const idx = xml.indexOf('<w:br', pos);
+    if (idx === -1) return -1;
+    // <w:br> 后面那个字符：'>' 或 ' ' 或 '/' 或属性起始
+    const c = xml[idx + 5];
+    if (c === '>' || c === ' ' || c === '/' || c === '\t' || c === '\n') {
+      // 确认 self-closing
+      const tagEnd = xml.indexOf('>', idx);
+      if (tagEnd === -1) return -1;
+      if (xml[tagEnd - 1] !== '/') {
+        // <w:br> 单独出现（无 self-close）OOXML 不允许，跳过
+        pos = idx + 5;
+        continue;
+      }
+      return idx;
+    }
+    // 不是 br（可能是 <w:break>、<w:brType> 等），跳过
+    pos = idx + 5;
+  }
+  return -1;
 }
 
 /**

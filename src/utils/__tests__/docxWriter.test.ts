@@ -190,4 +190,65 @@ describe('B1: applyDocxEdits on user real docx', () => {
     expect(out).not.toMatch(/_{5,}/);
     expect(count).toBe(3);
   });
+
+  it('B7: maskedToken 跨 <w:br/> 节点（mammoth 把软换行转 \\n）', () => {
+    // spy 真实 docx 场景：mammoth extractRawText 在 w:br 处输出 \n
+    //   "费用\n4.1"（AMOUNT 类型）作为单个 token 被检测
+    //   脱敏时 maskedToken = "_______\n_____"（纯下划线 + ZWS marker）
+    //   恢复时 docxWriter 必须在 concatenatedText 里把 <w:br/> 视作 \n
+    //   才能 indexOf 找到 maskedToken
+    const xml = `<w:body><w:p><w:r><w:t xml:space="preserve">费用</w:t><w:br/><w:t>4.1</w:t></w:r></w:p></w:body>`;
+    const edits = [
+      { maskedToken: '费用\n4.1', originalValue: '¥5000' },
+    ];
+    const out = applyDocxEdits(xml, edits);
+    console.log('\n=== B7 输出 ===\n', out);
+    expect(out).toContain('<w:t');
+    expect(out).toContain('¥5000');
+    expect(out).not.toContain('费用');
+    expect(out).not.toContain('4.1');
+  });
+
+  it('B7: 多个 <w:br/> 串联 + 跨多个 w:r', () => {
+    // 更复杂的 case：<w:br/> 在不同 w:r 里，concatenatedText 需识别所有 \n
+    const xml = `<w:body><w:p><w:r><w:t>第一行</w:t></w:r><w:r><w:br/></w:r><w:r><w:t>第二行</w:t></w:r><w:r><w:br/></w:r><w:r><w:t>第三行</w:t></w:r></w:p></w:body>`;
+    const edits = [
+      { maskedToken: '第一行\n第二行\n第三行', originalValue: '合并文本' },
+    ];
+    const out = applyDocxEdits(xml, edits);
+    console.log('\n=== B7-multi 输出 ===\n', out);
+    expect(out).toContain('合并文本');
+    expect(out).not.toContain('第一行');
+    expect(out).not.toContain('第二行');
+    expect(out).not.toContain('第三行');
+  });
+
+  it('B7: 跨 <w:br/> 节点 + ZWS marker（spy 真实 mask→restore 两步场景）', () => {
+    // spy 真实流程：
+    //   step 1 mask:   原值 "费用\n4.1"（6 chars, 跨 <w:br/>） → maskedToken "______\u200B"（7 chars）
+    //   step 2 restore: maskedToken → 原值
+    // 验证 mask 阶段 + restore 阶段都成功。
+    const xml = `<w:body><w:p><w:r><w:t xml:space="preserve">费用</w:t><w:br/><w:t>4.1</w:t></w:r></w:p></w:body>`;
+
+    // 模拟 generateDisplayToken('费用\n4.1', 0) → 6 _ + 1 ZWS
+    const maskedToken = '_'.repeat(6) + '\u200B';
+
+    // step 1: mask（原值 → maskedToken）
+    const maskedXml = applyDocxEdits(xml, [
+      { maskedToken: '费用\n4.1', originalValue: maskedToken },
+    ]);
+    console.log(`\n=== B7-ZWS mask 输出 ===\nmaskedToken="${maskedToken}"\n${maskedXml}`);
+    expect(maskedXml).toContain(maskedToken);  // ZWS 写进了 <w:t>
+    expect(maskedXml).not.toContain('费用');
+    expect(maskedXml).not.toContain('4.1');
+
+    // step 2: restore（maskedToken → 原值）
+    const restoredXml = applyDocxEdits(maskedXml, [
+      { maskedToken, originalValue: '费用\n4.1' },
+    ]);
+    console.log(`\n=== B7-ZWS restore 输出 ===\n${restoredXml}`);
+    expect(restoredXml).toContain('费用');
+    expect(restoredXml).toContain('4.1');
+    expect(restoredXml).not.toContain(maskedToken);
+  });
 });
