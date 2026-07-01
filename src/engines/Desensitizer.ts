@@ -1,6 +1,6 @@
 import type { MappingEntry, SensitiveMatch, SensitiveType } from '@/types';
 import { CryptoManager } from './CryptoManager';
-import { generateUUID, generateToken } from '@/utils';
+import { generateUUID, generateDisplayToken } from '@/utils';
 import { SENSITIVE_TYPE_LABELS } from '@/rules';
 
 interface DesensitizeOptions {
@@ -38,7 +38,7 @@ export class Desensitizer {
         // 重叠或非法区间：跳过（上游 SensitiveFinder 应保证非重叠，做兜底）
         continue;
       }
-      const token = generateToken(match.type, i + 1);
+      const token = generateDisplayToken(match.value, i);
 
       const prefix = text.slice(cursor, match.start);
       const tokenStartInResult = resultCursor + prefix.length;

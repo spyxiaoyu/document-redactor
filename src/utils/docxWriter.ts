@@ -16,15 +16,90 @@ export interface DocxEdit {
 
 /**
  * 给 document.xml + edits，返回替换后的 document.xml 字符串。
+ *
+ * 关键变更（v5）：按 maskedToken 分组，组内按 edits 输入顺序一对一替换 occurrence。
+ * 这样多个不同 originalValue 但相同长度的 maskedToken（纯下划线）能正确恢复，
+ * 不再被 applyOneEdit 的 replaceAll 行为覆盖成第一个 edit 的 originalValue。
+ *
+ * 调用约定：edits 必须按 docx occurrence 顺序排列（即 mappingTable 按 start 升序）。
+ * 这是 UploadPage / RestorePage 的现有保证。
  */
 export function applyDocxEdits(documentXml: string, edits: DocxEdit[]): string {
   let xml = documentXml;
-  // 重新扫描每个 edit 的 textNodes（因为前一个 edit 可能改了节点区间）
-  // 这里我们采用增量更新：每次 edit 后重新扫描
-  for (const edit of edits) {
-    xml = applyOneEdit(xml, edit);
+
+  // 按 maskedToken 分组，组内保留 edits 输入顺序（=occurrence 顺序）
+  const groups: Array<{ token: string; originalValues: string[] }> = [];
+  for (const e of edits) {
+    if (!e.maskedToken) continue;
+    const last = groups[groups.length - 1];
+    if (last && last.token === e.maskedToken) {
+      last.originalValues.push(e.originalValue);
+    } else {
+      groups.push({ token: e.maskedToken, originalValues: [e.originalValue] });
+    }
+  }
+
+  // 按 maskedToken 长度降序处理：长 token 先替换，避免短 token 误匹配到长 token 内部。
+  // 例如 `__` 会匹配到 `___________` 内部的 5 个重叠位置，所以 `___________` 必须先替换。
+  groups.sort((a, b) => b.token.length - a.token.length);
+
+  // 合并同 token 的 group（按第一次出现顺序保留 originalValues 顺序）
+  // 修复：分组时只合并相邻同 token edits，但 sort 后跨距离的同 token group 需要再次合并，
+  // 否则会变成多个 1-originalValue group（走 replaceAll 而非 occurrence 配对）。
+  const mergedGroups: Array<{ token: string; originalValues: string[] }> = [];
+  for (const g of groups) {
+    const last = mergedGroups[mergedGroups.length - 1];
+    if (last && last.token === g.token) {
+      last.originalValues.push(...g.originalValues);
+    } else {
+      mergedGroups.push({ token: g.token, originalValues: [...g.originalValues] });
+    }
+  }
+
+  for (const group of mergedGroups) {
+    if (group.originalValues.length === 1) {
+      // 单 edit：replaceAll 行为（兼容旧测试）
+      xml = applyOneEdit(xml, { maskedToken: group.token, originalValue: group.originalValues[0] });
+    } else {
+      // 多 edit 同 token：按 occurrence 顺序一对一替换
+      // 反向处理（从最后一个 occurrence 开始），避免位置偏移
+      for (let i = group.originalValues.length - 1; i >= 0; i--) {
+        xml = applyNthOccurrenceEdit(xml, group.token, i, group.originalValues[i]);
+      }
+    }
   }
   return xml;
+}
+
+/**
+ * 替换 maskedToken 在 documentXml 中的第 N 个（0-indexed）occurrence。
+ * 每次调用重新 scanNodes，避免前一次替换改了节点区间导致位置漂移。
+ */
+function applyNthOccurrenceEdit(
+  documentXml: string,
+  maskedToken: string,
+  occIdx: number,
+  originalValue: string,
+): string {
+  const nodes = scanNodes(documentXml);
+  const concatenatedText = nodes.map(n => n.text).join('');
+
+  let currentOccIdx = 0;
+  let searchFrom = 0;
+  while (searchFrom <= concatenatedText.length) {
+    const idx = concatenatedText.indexOf(maskedToken, searchFrom);
+    if (idx === -1) break;
+    if (currentOccIdx === occIdx) {
+      return applyOneOccurrence(documentXml, nodes, idx, idx + maskedToken.length, maskedToken, originalValue);
+    }
+    currentOccIdx++;
+    searchFrom = idx + maskedToken.length;
+  }
+  console.warn(
+    `[applyNthOccurrenceEdit] occurrence #${occIdx} of "${maskedToken}" not found ` +
+    `(only ${currentOccIdx} occurrences in docx)`,
+  );
+  return documentXml;
 }
 
 /**

@@ -237,10 +237,11 @@ export function RestorePage() {
       let filename: string;
 
       if (isDocx) {
-        setDownloadStep('⏳ 2/5 在原 docx 字节上替换 token (B 方案，保留原结构)...');
+        setDownloadStep('⏳ 2/5 在原 docx 字节上替换 maskedToken 为原值 (B 方案，保留原结构)...');
         const { writeDocxFromEdits } = await import('@/utils/docxZipWriter');
         const arrayBuffer = await file!.arrayBuffer();
         // edits: maskedToken → originalValue（恢复方向）
+        // maskedToken 格式：视觉下划线 + 隐藏 ZWS marker（与 UploadPage 写入时一致）
         const edits = (decryptedMapping || []).map(e => ({
           maskedToken: e.maskedToken,
           originalValue: e.originalValue,

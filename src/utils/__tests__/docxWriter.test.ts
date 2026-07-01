@@ -125,4 +125,69 @@ describe('B1: applyDocxEdits on user real docx', () => {
       expect(restoredXml).toContain(f.value);
     }
   });
+
+  it('B6: same-length pure-underscore maskedToken with different originalValues (occurrence-ordered pairing)', () => {
+    // spy 真实 docx 场景：maskedToken 是纯下划线（按原值长度），多个不同原值可能同长度
+    //   占位人 (2字) → "__"
+    //   张某某 (2字) → "__"  ← 同 maskedToken
+    //   13800000000 (11位) → "___________"
+    //   13800000001 (11位) → "___________"  ← 同 maskedToken
+    //
+    // applyDocxEdits v5 必须按 occurrence 顺序一对一替换（不是 replaceAll），
+    // 否则第一个 edit 会把所有 "__" 都替换成"占位人"，后续 edit 找不到 "__" 变成 no-op。
+    //
+    // 输入 XML：3 个敏感字段 + 周围文本，按 docx 出现顺序排列
+    const xml = `<w:body>
+      <w:p><w:r><w:t>甲方代表：__</w:t></w:r></w:p>
+      <w:p><w:r><w:t>电话：___________</w:t></w:r></w:p>
+      <w:p><w:r><w:t>乙方代表：__</w:t></w:r></w:p>
+      <w:p><w:r><w:t>电话：___________</w:t></w:r></w:p>
+      <w:p><w:r><w:t>乙方：__________</w:t></w:r></w:p>
+    </w:body>`;
+
+    // Edits 按 docx 出现顺序：mappingTable 按 position.start 升序
+    const edits = [
+      { maskedToken: '__', originalValue: '占位人' },         // 甲方代表
+      { maskedToken: '___________', originalValue: '13800000000' }, // 甲方电话
+      { maskedToken: '__', originalValue: '张某某' },         // 乙方代表
+      { maskedToken: '___________', originalValue: '13800000001' }, // 乙方电话
+      { maskedToken: '__________', originalValue: '北京SAMPLE-CO-Y' },     // 乙方公司
+    ];
+
+    const out = applyDocxEdits(xml, edits);
+
+    console.log('\n=== B6 输出 ===');
+    console.log(out);
+
+    // 验证：每个位置都正确替换
+    expect(out).toContain('甲方代表：占位人');
+    expect(out).toContain('乙方代表：张某某');
+    expect(out).toContain('电话：13800000000');
+    expect(out).toContain('电话：13800000001');
+    expect(out).toContain('乙方：北京SAMPLE-CO-Y');
+
+    // 验证：下划线全部消失
+    expect(out).not.toMatch(/_{2,}/);
+    expect(out).not.toContain('__');
+    expect(out).not.toContain('___________');
+    expect(out).not.toContain('__________');
+  });
+
+  it('B6: same-length + same-originalValue (dedup case, replaceAll behavior)', () => {
+    // 同一敏感字段在 docx 出现多次（如"北京SAMPLE-CO-Z有限公司"在合同里出现 3 次）
+    // edits 应该只有一个 entry（caller 去重），applyDocxEdits 走 replaceAll 路径
+    const xml = `<w:body>
+      <w:p><w:r><w:t>甲方：__________________</w:t></w:r></w:p>
+      <w:p><w:r><w:t>乙方：__________________</w:t></w:r></w:p>
+      <w:p><w:r><w:t>丙方：__________________</w:t></w:r></w:p>
+    </w:body>`;
+    const edits = [
+      { maskedToken: '__________________', originalValue: '北京SAMPLE-CO-Z有限公司' },
+    ];
+    const out = applyDocxEdits(xml, edits);
+    const count = (out.match(/北京SAMPLE-CO-Z有限公司/g) || []).length;
+    console.log(`\n=== B6 dedup 输出 ===\n${out}\n  count=${count}`);
+    expect(out).not.toMatch(/_{5,}/);
+    expect(count).toBe(3);
+  });
 });

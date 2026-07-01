@@ -171,7 +171,7 @@ export function UploadPage() {
       const originalArrayBuffer = currentFile ? await currentFile.arrayBuffer() : null;
       await buildDesensitizedDocx(text, mappingTable, parsedDocument!.ast.metadata.fileName, originalArrayBuffer);
     }
-  }, [password, confirmPassword, parsedDocument, localSelected, sensitiveMatches, exportFormat, currentFile]);
+  }, [password, confirmPassword, parsedDocument, localSelected, sensitiveMatches, exportFormat, currentFile, storeMappingTable]);
 
   const handleDownload = useCallback(async () => {
     if (!parsedDocument) return;
@@ -218,7 +218,7 @@ export function UploadPage() {
       const originalArrayBuffer = currentFile ? await currentFile.arrayBuffer() : null;
       await buildDesensitizedDocx(text, mappingTable, parsedDocument.ast.metadata.fileName, originalArrayBuffer);
     }
-  }, [exportFormat, parsedDocument, localSelected, sensitiveMatches, currentFile]);
+  }, [exportFormat, parsedDocument, localSelected, sensitiveMatches, currentFile, storeMappingTable]);
 
   // 生成带内嵌元数据的 DOCX（mappingTable 加密存储在 docProps/desensitizer.xml）
   // B 方案主路径：在原 docx 字节上做 token → originalValue 替换，保留原表格/页眉/页脚/字体；
@@ -232,13 +232,14 @@ export function UploadPage() {
     const password = downloadPasswordRef.current;
     if (!password) throw new Error('请先设置下载密码');
 
-    // 0. 优先用 store 里的 unique token（[NAME_0001] 格式），fallback 才用 caller 传入的（'_'.repeat）
-    //    这样加密 docx 里的脱敏 token 是统一格式，跨文件一致。
+    // 0. 优先用 store 里的 unique token（视觉下划线 + 隐藏 ZWS marker），fallback 才用 caller 传入的。
+    //    maskedToken 格式：'_'.repeat(原值长度) + '\u200B' × (index+1)
+    //    视觉上看是空白下划线（Word/WPS 不渲染 ZWS），但全局唯一可配对。
     const effectiveMappingTable: MappingEntry[] =
       storeMappingTable.length > 0 ? storeMappingTable : mappingTable;
 
     // 1. 把 mappingTable 里 maskedToken → originalValue 反过来作为 edit
-    //    (B 方案: 把原 docx 里的原值替换为 token，得到加密 docx)
+    //    (B 方案: 把原 docx 里的原值替换为 maskedToken，得到加密 docx)
     const edits = effectiveMappingTable
       .filter(e => e.originalValue && e.maskedToken)
       .map(e => ({ maskedToken: e.originalValue, originalValue: e.maskedToken }));
