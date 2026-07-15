@@ -44,7 +44,12 @@ export class SensitiveFinder {
   }
 
   addKeywords(keywords: string[]): void {
-    keywords.forEach(k => this.keywordSet.add(k));
+    // 防御性过滤空字符串：否则 findSensitiveContent 里 indexOf('', index) 永远返回 index
+    // （lastIndex + keyword.length = lastIndex + 0 = lastIndex）→ 死循环 → OOM。
+    // 这正是 SPEC-A2-07 钉死的 invariant。
+    keywords.forEach(k => {
+      if (k.length > 0) this.keywordSet.add(k);
+    });
   }
 
   clearKeywords(): void {
