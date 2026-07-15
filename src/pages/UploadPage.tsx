@@ -172,7 +172,7 @@ export function UploadPage() {
       totalAdded += positions.length;
     });
 
-    setToast(`已添加 ${totalAdded} 处为敏感词`);
+    setToast(`已添加 ${totalAdded} 处敏感词`);
     setTimeout(() => setToast(null), 2000);
     setSearchHits([]);
     setSearchKeyword('');
@@ -195,7 +195,7 @@ export function UploadPage() {
       totalAdded += positions.length;
     });
 
-    setToast(`已添加 ${totalAdded} 处为敏感词`);
+    setToast(`已添加 ${totalAdded} 处敏感词`);
     setTimeout(() => setToast(null), 2000);
     setSearchHits([]);
     setSearchKeyword('');
