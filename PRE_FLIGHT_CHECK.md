@@ -210,7 +210,7 @@ npx eslint src --ext .ts,.tsx 2>&1 | tail -10
 
 ---
 
-### §11.2 批量搜索脱敏必须过滤重叠 hit（commit pending — spy 截图 bug）
+### §11.2 批量搜索脱敏必须过滤重叠 hit（commit `e0e16a6` 根治）
 
 **历史 bug**：spy 现场报告——一键搜索词语批量脱敏时，如果新搜索关键词落在已选中的大范围 match 内部（比如已选 17 字 COMPANY "北京示例科技有限公司"，又搜 "示例" 一键脱敏），addManualMatch 的"重叠替换"逻辑（commit `1f9f93d` 修的渲染 bug）会把 17 字 match 替换成 4 字 CUSTOM，导致**脱敏范围变小、用户得手动重选**。
 
@@ -240,6 +240,31 @@ npx eslint src --ext .ts,.tsx 2>&1 | tail -10
 
 ---
 
+### §11.3 OOXML 段落级 sibling 元素必须保留（commit `8494c34` 根治）
+
+**历史 bug**：spy 真实 docx（SAMPLE-CO-Z合同，"SAMPLE-CO-F" 18 字跨 3 个 `<w:r>` 中间夹 2 个 `<w:proofErr/>`）走 B 方案 mask→restore 后下载，**提行不连贯、影响阅读**。
+
+- 根因：`mergeRunsForCoverage` 把 [runStart, runEnd) 区间内的所有内容替换成单个新 `<w:r>`。但 `<w:proofErr/>`、`<w:bookmarkStart/>`、`<w:bookmarkEnd/>` 等**不是** `<w:r>` 的子元素，是 `<w:p>` 的直接子元素（OOXML schema 硬性要求）。原实现一并吞掉 → Word/WPS 重新分词时把"run 边界突变 + proofErr 消失"理解为重新换行点
+- 影响：脱敏后 docx 视觉段落错乱（line break 错位），spy 截图显示合同正文行间距完全错乱
+
+**修法**：
+1. 抽 `extractSiblingElementsFromRuns(content)` — 扫描 content 跳过每个 `<w:r>...</w:r>` 块，收集中间的 raw XML（sibling 元素）
+2. 抽 `findRunOpenInString(content, from)` — 字符级精确识别 `<w:r>` 起始，排除 `<w:rPr/>` / `<w:rFonts>` 等以 `<w:r` 开头但不是 `<w:r>` 的标签
+3. mergeRunsForCoverage 拼回：`保留的 siblings` + `新的 merged run`
+
+**检查清单**（任何"修改 [runStart, runEnd) 区间"的代码）：
+- [ ] 区间内非 `<w:r>` 的 sibling 元素（`<w:proofErr/>`、`<w:bookmarkStart/>`、`<w:hyperlink>` 等）是否被提取保留？
+- [ ] OOXML schema 验证：`<w:p>` 直接子元素只允许 `<w:r>` / `<w:hyperlink>` / 段落级 sibling — 把 sibling 塞进 `<w:r>` 是**非法** XML
+- [ ] 跑真实 spy docx（SAMPLE-CO-Z 50KB）走 mask→restore 后，mammoth 提取对比 paragraph 数 + line break 数
+
+**新测试**：`src/utils/__tests__/FormatPreservationRegression.test.ts` 3 断言（`<w:proofErr>` 保留 / mammoth delta / mammoth 可解析）+ 视觉对比段落结构
+
+**心智模型**：
+- OOXML 段落 = `<w:p>` 树，children 可以是 `<w:r>`（run）、`<w:hyperlink>`（链接）、`<w:proofErr/>`（校对错误标记）、`<w:bookmarkStart/>` / `<w:bookmarkEnd/>`（书签）、`<w:commentRangeStart/>` / `<w:commentRangeEnd/>`（批注范围）
+- 任何"对一段连续 run 做合并/替换"的代码都必须**显式处理 sibling** —— 不是优化，是结构正确性要求
+
+---
+
 ## 📋 一句话口诀
 
 > **改完跑测试，跑了看输出，输出贴出来，贴完才能说 done。**
@@ -248,5 +273,5 @@ npx eslint src --ext .ts,.tsx 2>&1 | tail -10
 
 ---
 
-**当前最新检查项**：`0d0dcf2` 暴露的"测试 mock data dimension mismatch"已纳入 §8。
+**当前最新检查项**：`8494c34` 暴露的"OOXML 段落级 sibling 元素被吞"已纳入 §11.3。
 下次新 bug 出现 → 追加 section → 永远不让历史重演。
