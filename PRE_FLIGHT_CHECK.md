@@ -210,6 +210,36 @@ npx eslint src --ext .ts,.tsx 2>&1 | tail -10
 
 ---
 
+### §11.2 批量搜索脱敏必须过滤重叠 hit（commit pending — spy 截图 bug）
+
+**历史 bug**：spy 现场报告——一键搜索词语批量脱敏时，如果新搜索关键词落在已选中的大范围 match 内部（比如已选 17 字 COMPANY "北京示例科技有限公司"，又搜 "示例" 一键脱敏），addManualMatch 的"重叠替换"逻辑（commit `1f9f93d` 修的渲染 bug）会把 17 字 match 替换成 4 字 CUSTOM，导致**脱敏范围变小、用户得手动重选**。
+
+- 根因：`addManualMatch` 的"重叠替换"语义对**单调用**是对的（用户主动覆盖意图），但对**批量场景**错——批量场景下"已选中的 match 永远比新搜索 hit 更优先"，因为：
+  1. 用户没主动取消选中 → 旧 match 还在 selectedMatches
+  2. 新搜索 hit 通常是无意识的"我搜这个词看看有哪些" → 覆盖意图弱
+  3. 替换会让用户的"我以为它还在"被打破 → 反直觉
+
+- 影响：脱敏范围从 17 字 → 4 字，用户得手动重新选中 → UX 崩溃
+
+**修法**：
+1. 加 `filterHitsByExistingMatches<H, M>(hits, existingMatches): hits` 纯函数（src/utils/string.ts）
+2. UploadPage `handleAddAllSearchHits` + `handleAddCheckedSearchHits` 在调 addManualMatch 前先过滤
+3. toast 显示"已添加 N 处（K 处已在范围内，已跳过）"让用户知道
+4. **addManualMatch 自身语义不变**（单调用仍走"重叠替换"），因为那是用户主动覆盖意图
+
+**检查方法**（任何"批量 addManualMatch"代码路径）：
+- [ ] 批量调用 addManualMatch 前，是否过滤掉与已选 match 重叠的 hit？
+- [ ] 跳过的 hit 是否在 toast 里告诉用户跳过了多少？
+- [ ] addManualMatch 单调用语义没被改？（单调用仍走"重叠替换"，因为那是用户主动覆盖意图）
+
+**新测试**：`src/utils/__tests__/utilsCore.test.ts` → `filterHitsByExistingMatches` 10 测试（spy 截图回归 + 完全包含 / 部分重叠 / 边界相切 / 空数组 / 顺序保留）
+
+**心智模型**：
+- addManualMatch 单调用 = 用户说"我就要这个，旧的不要了"→ 重叠替换 OK
+- 批量搜索脱敏 = 用户说"把这些都加上"→ 但没说"覆盖已选中的" → 已选中优先，跳过重叠 hit
+
+---
+
 ## 📋 一句话口诀
 
 > **改完跑测试，跑了看输出，输出贴出来，贴完才能说 done。**

@@ -17,6 +17,7 @@ import {
   replaceRange,
   replaceAll,
   mergeOverlapping,
+  filterHitsByExistingMatches,
 } from '@/utils';
 
 describe('generateUUID', () => {
@@ -199,5 +200,98 @@ describe('mergeOverlapping', () => {
     const result = mergeOverlapping(arr);
     // 全部重叠 → 1 段
     expect(result.length).toBe(1);
+  });
+});
+
+describe('filterHitsByExistingMatches', () => {
+  /**
+   * 场景：用户已选中 17 字 COMPANY "北京示例科技有限公司"，
+   *       又搜 "示例" 想批量脱敏。
+   *       如果不过滤直接 addManualMatch，addManualMatch 的"重叠替换"会把
+   *       17 字 match 替换成 4 字 → 脱敏范围变小。
+   *       修法：批量脱敏前先用 filterHitsByExistingMatches 过滤掉重叠 hit。
+   */
+  it('Spy 截图回归：hit 完全在已选 match 内部 → 跳过（保留 17 字 match）', () => {
+    const existing = [{ start: 2, end: 19, type: 'COMPANY' }]; // "北京示例科技有限公司"
+    const hits = [{ start: 4, end: 8, type: 'CUSTOM' }];        // "示例"
+    const result = filterHitsByExistingMatches(hits, existing);
+    expect(result.length).toBe(0);
+  });
+
+  it('hit 与已选 match 部分重叠 → 跳过', () => {
+    const existing = [{ start: 5, end: 10 }];
+    const hits = [
+      { start: 7, end: 12 },  // 部分重叠（7<10 && 12>5）
+      { start: 3, end: 7 },   // 部分重叠（7>5 但 3<10）—— 注意 3<10 不行，要 3<existing.end=10 → TRUE
+    ];
+    const result = filterHitsByExistingMatches(hits, existing);
+    expect(result.length).toBe(0);
+  });
+
+  it('hit 完全包含已选 match → 跳过（保守原则，不让批量覆盖小 match）', () => {
+    const existing = [{ start: 10, end: 15 }];
+    const hits = [{ start: 5, end: 20 }]; // 完全包住
+    const result = filterHitsByExistingMatches(hits, existing);
+    expect(result.length).toBe(0);
+  });
+
+  it('hit 与已选 match 边界相切（不相交）→ 保留', () => {
+    const existing = [{ start: 5, end: 10 }];
+    const hits = [
+      { start: 10, end: 15 }, // 边界相切：hit.start=10 不 < existing.end=10 → 不重叠
+      { start: 0, end: 5 },   // 边界相切：hit.end=5 不 > existing.start=5 → 不重叠
+    ];
+    const result = filterHitsByExistingMatches(hits, existing);
+    expect(result.length).toBe(2);
+  });
+
+  it('hit 与已选 match 完全不重叠 → 保留', () => {
+    const existing = [{ start: 0, end: 5 }];
+    const hits = [
+      { start: 10, end: 15 },
+      { start: 20, end: 25 },
+    ];
+    const result = filterHitsByExistingMatches(hits, existing);
+    expect(result.length).toBe(2);
+  });
+
+  it('多个 hit 部分重叠 / 部分不重叠 → 只过滤重叠的', () => {
+    const existing = [{ start: 10, end: 15 }];
+    const hits = [
+      { start: 0, end: 5 },    // 不重叠 → 保留
+      { start: 12, end: 18 },  // 重叠 → 跳过
+      { start: 30, end: 35 },  // 不重叠 → 保留
+      { start: 14, end: 20 },  // 重叠 → 跳过
+    ];
+    const result = filterHitsByExistingMatches(hits, existing);
+    expect(result.length).toBe(2);
+    expect(result.map(h => h.start)).toEqual([0, 30]);
+  });
+
+  it('hit 完全等于已选 match → 跳过', () => {
+    const existing = [{ start: 10, end: 15 }];
+    const hits = [{ start: 10, end: 15 }];
+    const result = filterHitsByExistingMatches(hits, existing);
+    expect(result.length).toBe(0);
+  });
+
+  it('空 hits 数组 → 返回空', () => {
+    expect(filterHitsByExistingMatches([], [{ start: 0, end: 5 }])).toEqual([]);
+  });
+
+  it('空 existingMatches → 全部保留', () => {
+    const hits = [{ start: 0, end: 5 }, { start: 10, end: 15 }];
+    expect(filterHitsByExistingMatches(hits, [])).toEqual(hits);
+  });
+
+  it('保留原顺序', () => {
+    const existing = [{ start: 100, end: 200 }];
+    const hits = [
+      { start: 0, end: 5 },
+      { start: 10, end: 15 },
+      { start: 20, end: 25 },
+    ];
+    const result = filterHitsByExistingMatches(hits, existing);
+    expect(result).toEqual(hits); // 完全相同，没过滤
   });
 });

@@ -8,7 +8,7 @@ import { Button, Input, Modal, Progress } from '@/components/common';
 import { Shield, Download, Lock, RefreshCw, Plus, Search, Check, MousePointer2 } from 'lucide-react';
 import type { SensitiveMatch, MappingEntry } from '@/types';
 import { CryptoManager } from '@/engines/CryptoManager';
-import { generateUUID } from '@/utils';
+import { generateUUID, filterHitsByExistingMatches } from '@/utils';
 import { buildHighlightParts } from '@/utils/highlight';
 // writeDocxFromEdits / JSZip 都改为动态引入，只在导出 docx 时才下载 ~91KB gzip
 
@@ -153,14 +153,33 @@ export function UploadPage() {
   // 把 SearchResultsPanel 选中的命中转成 sensitive match
   // 关键：按 hit.value（原文真实 case）分组，对每个 unique value 调一次 addManualMatch。
   // 这样无论用户输入的 keyword case 与原文是否一致，所有命中都被正确脱敏且保留原文大小写。
+  //
+  // 修法（spy 截图 bug）：addManualMatch 的"重叠替换"逻辑（commit `1f9f93d` 修的渲染 bug）
+  // 在批量场景下会反向破坏已选中的大范围 match。例如：
+  //   1. 用户已选中 COMPANY "北京示例科技有限公司"（17 字）
+  //   2. 搜 "示例" 一键脱敏 → addManualMatch 直接删老 17 字 + 加新 4 字
+  //   3. 脱敏范围从 17 字 → 4 字，用户得手动重选 → 极度反直觉
+  // 修法：批量脱敏前先 filterHitsByExistingMatches 过滤掉与已选 match 重叠的 hit，
+  //      让"已选中的 match 永远比新搜索 hit 更优先"。
   const handleAddCheckedSearchHits = useCallback((indices: number[]) => {
     if (indices.length === 0) return;
     const checkedHits = searchHits.filter(h => indices.includes(h.index));
     if (checkedHits.length === 0) return;
 
+    // 过滤掉与已选 sensitiveMatch 重叠的 hit（保留大范围 match）
+    const filteredHits = filterHitsByExistingMatches(checkedHits, sensitiveMatches);
+    const skippedCount = checkedHits.length - filteredHits.length;
+    if (filteredHits.length === 0) {
+      setToast(`所选 ${checkedHits.length} 处全部已在敏感词范围内，已跳过`);
+      setTimeout(() => setToast(null), 2000);
+      setSearchHits([]);
+      setSearchKeyword('');
+      return;
+    }
+
     // 按 value 分组（同一 value 的位置一起处理）
     const byValue = new Map<string, number[]>();
-    checkedHits.forEach(h => {
+    filteredHits.forEach(h => {
       const arr = byValue.get(h.value) || [];
       arr.push(h.start);
       byValue.set(h.value, arr);
@@ -172,18 +191,33 @@ export function UploadPage() {
       totalAdded += positions.length;
     });
 
-    setToast(`已添加 ${totalAdded} 处敏感词`);
-    setTimeout(() => setToast(null), 2000);
+    const toastMsg = skippedCount > 0
+      ? `已添加 ${totalAdded} 处敏感词（${skippedCount} 处已在范围内，已跳过）`
+      : `已添加 ${totalAdded} 处敏感词`;
+    setToast(toastMsg);
+    setTimeout(() => setToast(null), 2500);
     setSearchHits([]);
     setSearchKeyword('');
-  }, [searchHits, addManualMatch]);
+  }, [searchHits, sensitiveMatches, addManualMatch]);
 
   // 一键全部脱敏：用每个 hit 的 value（原文真实 case），按 value 分组调 addManualMatch
+  // 同上：先过滤重叠 hit，避免破坏已选中的大范围 match
   const handleAddAllSearchHits = useCallback(() => {
     if (searchHits.length === 0) return;
 
+    // 过滤掉与已选 sensitiveMatch 重叠的 hit
+    const filteredHits = filterHitsByExistingMatches(searchHits, sensitiveMatches);
+    const skippedCount = searchHits.length - filteredHits.length;
+    if (filteredHits.length === 0) {
+      setToast(`全部 ${searchHits.length} 处命中已在敏感词范围内，已跳过`);
+      setTimeout(() => setToast(null), 2000);
+      setSearchHits([]);
+      setSearchKeyword('');
+      return;
+    }
+
     const byValue = new Map<string, number[]>();
-    searchHits.forEach(h => {
+    filteredHits.forEach(h => {
       const arr = byValue.get(h.value) || [];
       arr.push(h.start);
       byValue.set(h.value, arr);
@@ -195,11 +229,14 @@ export function UploadPage() {
       totalAdded += positions.length;
     });
 
-    setToast(`已添加 ${totalAdded} 处敏感词`);
-    setTimeout(() => setToast(null), 2000);
+    const toastMsg = skippedCount > 0
+      ? `已添加 ${totalAdded} 处敏感词（${skippedCount} 处已在范围内，已跳过）`
+      : `已添加 ${totalAdded} 处敏感词`;
+    setToast(toastMsg);
+    setTimeout(() => setToast(null), 2500);
     setSearchHits([]);
     setSearchKeyword('');
-  }, [searchHits, addManualMatch]);
+  }, [searchHits, sensitiveMatches, addManualMatch]);
 
   // 关闭搜索结果面板
   const handleClearSearch = useCallback(() => {
