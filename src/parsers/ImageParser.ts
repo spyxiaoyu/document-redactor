@@ -11,12 +11,16 @@ export class ImageParser implements Parser {
 
     try {
       const { createWorker } = await import('tesseract.js');
-      const worker = await createWorker('eng+chi');
+      // 强制走本地 tessdata（public/tessdata/），绝不去 jsDelivr
+      // 部署到 GitHub Pages 时 langPath 必须是绝对 URL（否则 tesseract.js 会拼成相对路径）
+      const langPath = `${window.location.origin}/tessdata`;
+      const worker = await createWorker('eng+chi', 1, { langPath });
       const result = await worker.recognize(file);
       text = result.data.text;
       await worker.terminate();
     } catch (err) {
       console.warn('[ImageParser] OCR worker failed, using filename only:', err);
+      // 推理：tessdata 文件不在 /tessdata/ 下，或文件大小为零
       // Fallback: return filename as text if OCR fails
       text = `[Image: ${file.name}]`;
     }

@@ -8,7 +8,7 @@ import type { SensitiveMatch, MappingEntry } from '@/types';
 import { CryptoManager } from '@/engines/CryptoManager';
 import { generateUUID } from '@/utils';
 import { buildHighlightParts } from '@/utils/highlight';
-import { writeDocxFromEdits } from '@/utils/docxZipWriter';
+// writeDocxFromEdits / JSZip 都改为动态引入，只在导出 docx 时才下载 ~91KB gzip
 
 const MAX_DESENSITIZE_CHARS = 500_000;
 
@@ -286,6 +286,7 @@ export function UploadPage() {
     // 3. 主路径：B 方案在原 docx 字节上做 token 替换，保留原结构
     if (originalArrayBuffer && originalArrayBuffer.byteLength > 0) {
       try {
+        const { writeDocxFromEdits } = await import('@/utils/docxZipWriter');
         const maskedArrayBuffer = await writeDocxFromEdits(originalArrayBuffer, edits);
         const blob = await injectMetaToZip(maskedArrayBuffer);
         triggerDownload(blob, originalFileName.replace(/\.[^.]+$/, '') + '_脱敏.docx');

@@ -59,7 +59,7 @@ export async function queryAuditLogs(
   action?: string,
   limit: number = 100
 ): Promise<AuditLogEntry[]> {
-  let query = db.auditLogs.orderBy('timestamp').reverse();
+  const query = db.auditLogs.orderBy('timestamp').reverse();
 
   if (fileId) {
     return db.auditLogs.where('fileId').equals(fileId).limit(limit).toArray();

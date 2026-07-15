@@ -98,9 +98,10 @@ export class Desensitizer {
     switch (type) {
       case 'PHONE':
         return value.slice(0, 3) + '****' + value.slice(-4);
-      case 'EMAIL':
+      case 'EMAIL': {
         const [local, domain] = value.split('@');
         return local.slice(0, 2) + '***@' + domain;
+      }
       case 'ID_CARD':
         return value.slice(0, 6) + '********' + value.slice(-4);
       case 'BANK_CARD':

@@ -8,7 +8,7 @@ import type { DesensitizationRecord, MappingEntry } from '@/types';
 import { generateUUID } from '@/utils';
 import { addAuditLog } from '@/db';
 import { Unlock, Download, FileText, AlertCircle, Search } from 'lucide-react';
-import JSZip from 'jszip';
+// JSZip 改为动态引入，避免上传流程首屏被强制打入（91KB gzip）
 
 const MAX_RESTORE_PREVIEW_CHARS = 500_000;
 
@@ -45,6 +45,7 @@ export function RestorePage() {
     // Step 1: 优先检测 DOCX 内嵌元数据（docProps/desensitizer.xml）
     try {
       const arrayBuffer = await selectedFile.arrayBuffer();
+      const JSZip = (await import('jszip')).default;
       const zip = await JSZip.loadAsync(arrayBuffer);
       const metaXml = await zip.file('docProps/desensitizer.xml')?.async('string');
 
@@ -113,8 +114,7 @@ export function RestorePage() {
       let mappingTable: MappingEntry[];
       let desensitizedText: string;
 
-      // 每个关键 await 前打 step tag，devtools console 能看到哪一步炸了
-      console.log('[RestorePage] step 1/5: decrypt mappingTable');
+      // 每个关键 await 都已用 try/catch 包裹 + 末尾 console.error；不在中间打 step tag
 
       if (embeddedMapping) {
         // 模式1：DOCX 内嵌元数据恢复
@@ -130,7 +130,6 @@ export function RestorePage() {
           ivBytes
         ) as MappingEntry[];
 
-        console.log('[RestorePage] step 2/5: mammoth on embedded DOCX');
         // 用 mammoth 在浏览器提取纯文本（file.text() 对 DOCX 返回 ZIP 二进制，是乱码根因）
         const mammoth = await import('mammoth');
         const arrayBuffer = await file!.arrayBuffer();
@@ -145,7 +144,6 @@ export function RestorePage() {
           selectedRecord.iv
         ) as MappingEntry[];
 
-        console.log('[RestorePage] step 2/5: read DB-mode desensitizedText');
         // DOCX 必须走 mammoth；否则 file.text() 拿到的是 ZIP 二进制乱码。
         // 其他格式保持 file.text()。
         if (file!.name.toLowerCase().endsWith('.docx')) {
@@ -160,7 +158,6 @@ export function RestorePage() {
         throw new Error('无可用恢复数据');
       }
 
-      console.log(`[RestorePage] step 3/5: restore text (mappingTable.length=${mappingTable.length})`);
       // 两种模式都走 desensitizer.restore（两趟替换，鲁棒处理交叉 originalValue / maskedToken）
       let restoredText: string;
       if (embeddedMapping || selectedRecord) {
@@ -170,7 +167,6 @@ export function RestorePage() {
       }
 
       if (!embeddedMapping && selectedRecord) {
-        console.log('[RestorePage] step 4/5: updateRecordStatus + addAuditLog');
         try {
           await updateRecordStatus(selectedRecord.id, 'restored');
           await addAuditLog({
@@ -188,7 +184,7 @@ export function RestorePage() {
         }
       }
 
-      console.log('[RestorePage] step 5/5: set state OK');
+      // 恢复成功，更新 UI
       setRestoredContent(restoredText);
       setDecryptedMapping(mappingTable);
       setShowPasswordModal(false);

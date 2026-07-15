@@ -112,6 +112,7 @@ export const useFileStore = create<FileState>((set, get) => ({
     let matchId = 0;
 
     // Find all occurrences of the text
+    // eslint-disable-next-line no-constant-condition
     while (true) {
       const index = rawText.indexOf(text, startIndex);
       if (index === -1) break;
