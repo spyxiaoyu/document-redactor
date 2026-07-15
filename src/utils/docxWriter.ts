@@ -311,6 +311,19 @@ function replaceSingleNode(
  *
  * 实现：从第一个 covering 节点的 <w:t 之前找最近的 <w:r 起点（不含在 <w:rPr/> 里），
  *       到最后一个 covering 节点的 </w:t> 之后找最近的 </w:r> 终点。
+ *
+ * 重要（spy 截图 bug 修复）：原实现在 [runStart, runEnd) 区间内只重建一个 <w:r>，
+ * 会把区间内的所有内容都丢掉，包括 <w:proofErr/>、<w:bookmarkStart/>、<w:bookmarkEnd/>
+ * 等段落级 sibling 元素。这些元素**不是 <w:r> 的子元素**，是 <w:p> 的直接子元素
+ * （OOXML 规范要求）。
+ *
+ * spy 真实 docx 50KB SAMPLE-CO-Z合同里 "SAMPLE-CO-F（北京）融媒体科技文化有限公司" 跨 3 个
+ * <w:r>，中间夹 2 个 <w:proofErr/>。mergeRunsForCoverage 把区间内的 proofErr 一起删了，
+ * Word/WPS 重新分词时把"run 边界突变 + proofErr 消失"理解为重新换行点 → 截图里的
+ * "提行不连贯、影响阅读"。
+ *
+ * 修法：从 [runStart, runEnd) 区间内提取出所有非 <w:r> 元素（即 sibling），放在新
+ * merged run 之前保留。
  */
 function mergeRunsForCoverage(
   documentXml: string,
@@ -355,9 +368,71 @@ function mergeRunsForCoverage(
     .replace(/</g, '&lt;')
     .replace(/>/g, '&gt;');
 
-  // 6. 拼回
-  const newRunXml = `<w:r>${rPrBlock}<w:t xml:space="preserve">${safeText}</w:t></w:r>`;
+  // 6. 提取 [runStart, runEnd) 区间内的 sibling 元素（<w:proofErr/>, <w:bookmarkStart/> 等）
+  //    它们是 <w:p> 的直接子元素，不能放进 <w:r> 里，必须保留在原位置（这里放在 merged run 之前）
+  const middleContent = documentXml.slice(runStart, runEnd);
+  const preservedSiblings = extractSiblingElementsFromRuns(middleContent);
+
+  // 7. 拼回：保留的 siblings + 新的 merged run
+  const newRunXml = `${preservedSiblings}<w:r>${rPrBlock}<w:t xml:space="preserve">${safeText}</w:t></w:r>`;
   return documentXml.slice(0, runStart) + newRunXml + documentXml.slice(runEnd);
+}
+
+/**
+ * 从一段包含 <w:r>...</w:r> 块的内容里，提取出所有不在 <w:r> 内的 sibling 元素。
+ *
+ * OOXML 段落级 sibling 包括但不限于：
+ *   - <w:proofErr/>（语法错误标记）
+ *   - <w:bookmarkStart/> / <w:bookmarkEnd/>（书签）
+ *   - <w:commentRangeStart/> / <w:commentRangeEnd/>（批注范围）
+ *   - <w:hyperlink>...</w:hyperlink>（超链接，包裹 <w:r>）
+ *
+ * 这些元素在 <w:p> 里和 <w:r> 是兄弟关系，**不能**被放进 <w:r> 内部（OOXML schema
+ * 不允许）。mergeRunsForCoverage 替换 [runStart, runEnd) 时如果一并吞掉它们，
+ * 会破坏段落结构（Word/WPS 重新分词换行）。
+ *
+ * 实现：扫描 content，跳过每个 <w:r>...</w:r> 块，收集中间的 raw XML 字符串。
+ */
+function extractSiblingElementsFromRuns(content: string): string {
+  const result: string[] = [];
+  let pos = 0;
+  while (pos < content.length) {
+    // 找下一个真正的 <w:r> 或 <w:r ...> 起始（不能是 <w:rPr/> 等）
+    const rOpenIdx = findRunOpenInString(content, pos);
+    if (rOpenIdx === -1) {
+      // 没有更多 <w:r>，剩下全是 sibling
+      if (pos < content.length) result.push(content.slice(pos));
+      break;
+    }
+    // <w:r> 之前的内容（pos..rOpenIdx）就是 sibling
+    if (rOpenIdx > pos) {
+      result.push(content.slice(pos, rOpenIdx));
+    }
+    // 跳过整个 <w:r>...</w:r> 块
+    const rCloseIdx = content.indexOf('</w:r>', rOpenIdx);
+    if (rCloseIdx === -1) break;
+    pos = rCloseIdx + '</w:r>'.length;
+  }
+  return result.join('');
+}
+
+/**
+ * 在 content 字符串里找下一个真正的 <w:r> 起始位置（<w:r> 或 <w:r ...>）。
+ * 排除 <w:rPr/> / <w:rPr> / <w:rFonts> 等以 <w:r 开头但不是 <w:r> 的标签。
+ */
+function findRunOpenInString(content: string, from: number): number {
+  let pos = from;
+  while (pos < content.length) {
+    const idx = content.indexOf('<w:r', pos);
+    if (idx === -1) return -1;
+    const char5 = content[idx + 4];
+    if (char5 === '>' || char5 === ' ') {
+      return idx;
+    }
+    // 不是 <w:r>（可能是 <w:rPr>, <w:rFonts> 等），跳过
+    pos = idx + 4;
+  }
+  return -1;
 }
 
 /**
