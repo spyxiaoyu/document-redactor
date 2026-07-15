@@ -1,7 +1,9 @@
 import { useState, useCallback, useRef, useEffect } from 'react';
+import type { ReactElement } from 'react';
 import { useFileStore } from '@/stores';
 import { FileUploader, FileCard } from '@/components/file';
 import { SensitivePanel } from '@/components/sensitive';
+import { SearchResultsPanel, type SearchHit } from '@/components/search';
 import { Button, Input, Modal, Progress } from '@/components/common';
 import { Shield, Download, Lock, RefreshCw, Plus, Search, Check, MousePointer2 } from 'lucide-react';
 import type { SensitiveMatch, MappingEntry } from '@/types';
@@ -43,6 +45,8 @@ export function UploadPage() {
   const [selectedText, setSelectedText] = useState('');
   const [showManualAdd, setShowManualAdd] = useState(false);
   const [searchKeyword, setSearchKeyword] = useState('');
+  // 两步骤搜索脱敏：第一步查到的命中位置
+  const [searchHits, setSearchHits] = useState<SearchHit[]>([]);
   const [toast, setToast] = useState<string | null>(null);
   const [exportFormat, setExportFormat] = useState<'original' | 'docx' | 'txt'>('original');
   const [addBtnPos, setAddBtnPos] = useState<{ x: number; y: number } | null>(null);
@@ -53,6 +57,12 @@ export function UploadPage() {
   const cryptoManagerRef = useRef(new CryptoManager());
   // 保存脱敏密码，用于下载时加密内嵌元数据
   const downloadPasswordRef = useRef<string>('');
+
+  // 提前到顶层：handler 里要用到，必须在 useCallback 之前声明
+  const originalTextFull = parsedDocument?.rawText || '';
+  const previewText = originalTextFull.length > MAX_DESENSITIZE_CHARS
+    ? originalTextFull.slice(0, MAX_DESENSITIZE_CHARS)
+    : originalTextFull;
 
   // selectedMatches 变化时同步到本地
   useEffect(() => {
@@ -92,14 +102,82 @@ export function UploadPage() {
     isLeftScrolling.current = false;
   }, []);
 
+  // 两步骤搜索脱敏：第一步 = 在原文中找出所有命中位置，列出"含此关键词的条款"
   const handleSearchKeyword = useCallback((keyword: string) => {
     setSearchKeyword(keyword);
-    if (keyword && keyword.length >= 2) {
-      addManualMatch(keyword);
-      setToast(`"${keyword}" 已添加为敏感词`);
-      setTimeout(() => setToast(null), 2000);
+    if (!keyword || keyword.length < 2 || !originalTextFull) {
+      setSearchHits([]);
+      return;
     }
-  }, [addManualMatch]);
+
+    // 大小写不敏感搜索（找位置），但 value 用原文 case（用于后续 addManualMatch）
+    const lowerText = originalTextFull.toLowerCase();
+    const lowerKeyword = keyword.toLowerCase();
+    const hits: SearchHit[] = [];
+    let pos = 0;
+    let idx = 0;
+    while (pos <= lowerText.length) {
+      const found = lowerText.indexOf(lowerKeyword, pos);
+      if (found === -1) break;
+      const start = found;
+      const end = found + keyword.length;
+      const contextBeforeRaw = originalTextFull.slice(Math.max(0, start - 30), start);
+      const contextAfterRaw = originalTextFull.slice(end, Math.min(originalTextFull.length, end + 30));
+      hits.push({
+        index: idx,
+        start,
+        end,
+        value: originalTextFull.slice(start, end),
+        contextBefore: contextBeforeRaw.length === 30 ? '…' + contextBeforeRaw.slice(-29) : contextBeforeRaw,
+        contextAfter: contextAfterRaw.length === 30 ? contextAfterRaw.slice(0, 29) + '…' : contextAfterRaw,
+      });
+      pos = start + 1;
+      idx++;
+    }
+    setSearchHits(hits);
+  }, [originalTextFull]);
+
+  // 把 SearchResultsPanel 选中的命中转成 sensitive match
+  const handleAddCheckedSearchHits = useCallback((indices: number[]) => {
+    if (indices.length === 0 || !searchKeyword) return;
+    const checkedPositions = searchHits
+      .filter(h => indices.includes(h.index))
+      .map(h => h.start);
+    if (checkedPositions.length === 0) return;
+    addManualMatch(searchKeyword, checkedPositions);
+    setToast(`已添加 ${checkedPositions.length} 处「${searchKeyword}」为敏感词`);
+    setTimeout(() => setToast(null), 2000);
+    setSearchHits([]);
+    setSearchKeyword('');
+  }, [searchHits, searchKeyword, addManualMatch]);
+
+  // 一键脱敏所有命中（按 keyword 一次性 addManualMatch → 内部会找全部位置）
+  const handleAddAllSearchHits = useCallback(() => {
+    if (!searchKeyword || searchHits.length === 0) return;
+    addManualMatch(searchKeyword); // 不传 positions → 全量加
+    setToast(`已添加 ${searchHits.length} 处「${searchKeyword}」为敏感词`);
+    setTimeout(() => setToast(null), 2000);
+    setSearchHits([]);
+    setSearchKeyword('');
+  }, [searchHits, searchKeyword, addManualMatch]);
+
+  // 关闭搜索结果面板
+  const handleClearSearch = useCallback(() => {
+    setSearchHits([]);
+    setSearchKeyword('');
+  }, []);
+
+  // 跳转到指定 hit 在原文的位置
+  const handleJumpToSearchHit = useCallback((index: number) => {
+    // 每个 hit 在原文面板用 <mark id={`search-hit-${index}`}> 标记，
+    // 通过 DOM 找到并 scrollIntoView。
+    setTimeout(() => {
+      const el = document.getElementById(`search-hit-${index}`);
+      if (el) {
+        el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      }
+    }, 50);
+  }, []);
 
   const handleFileSelect = useCallback(
     (file: File) => {
@@ -364,39 +442,103 @@ export function UploadPage() {
   }, [selectedText, addManualMatch]);
 
   // 渲染高亮 parts 为 JSX（基于 utils/highlight.ts 的 buildHighlightParts 纯函数）
-  // unselected match 在纯函数里就已是 text kind，所以这里只关心 text / match 两种 case
-  const renderHighlightParts = useCallback((text: string, matches: SensitiveMatch[], isOriginal: boolean) => {
-    if (!text) return [];
-    const parts = buildHighlightParts(text, matches, localSelected, isOriginal);
-    return parts.map((part, idx) => {
-      if (part.kind === 'text') {
-        return <span key={`text-${idx}`}>{part.text}</span>;
-      }
-      // part.kind === 'match'：仅 selected 命中此分支（unselected 已被 buildHighlightParts 降级为 text）
-      const onClick = () => toggleMatchSelection(part.matchId);
-      const className = isOriginal
-        ? "px-0.5 py-0.5 rounded cursor-pointer bg-yellow-200 dark:bg-yellow-800 dark:text-yellow-200 hover:bg-yellow-300 dark:hover:bg-yellow-700 ring-2 ring-primary"
-        : "border-b border-black text-transparent cursor-pointer inline-block min-w-[1ch]";
-      const title = isOriginal
-        ? `${part.type} - ${Math.round(part.confidence * 100)}%`
-        : `已脱敏: ${part.type}`;
-      return (
-        <span
-          key={`match-${part.matchId}-${idx}`}
-          className={className}
-          title={title}
-          onClick={onClick}
-        >
-          {part.text}
-        </span>
-      );
-    });
-  }, [toggleMatchSelection, localSelected, renderKey]);
+  // - 原文面板：叠加 searchHits，每个 hit 渲染为 <mark id="search-hit-{i}>，可被 scrollIntoView 定位
+  // - 脱敏后面板：不渲染 hit（搜索位置只用于预览，不影响脱敏后视觉）
+  const renderHighlightParts = useCallback(
+    (text: string, matches: SensitiveMatch[], isOriginal: boolean, searchHitsArg?: SearchHit[]) => {
+      if (!text) return [];
+      const parts = buildHighlightParts(text, matches, localSelected, isOriginal);
 
-  const originalText = parsedDocument?.rawText || '';
-  const previewText = originalText.length > MAX_DESENSITIZE_CHARS
-    ? originalText.slice(0, MAX_DESENSITIZE_CHARS)
-    : originalText;
+      // 把 searchHits 限定在当前 text 范围内（截断预览场景下越界 hit 不渲染）
+      const visibleHits = isOriginal && searchHitsArg && searchHitsArg.length > 0
+        ? searchHitsArg.filter(h => h.start < text.length && h.end <= text.length)
+        : [];
+
+      const renderMatchPart = (part: typeof parts[number] & { kind: 'match' }, idx: number) => {
+        const onClick = () => toggleMatchSelection(part.matchId);
+        const className = isOriginal
+          ? "px-0.5 py-0.5 rounded cursor-pointer bg-yellow-200 dark:bg-yellow-800 dark:text-yellow-200 hover:bg-yellow-300 dark:hover:bg-yellow-700 ring-2 ring-primary"
+          : "border-b border-black text-transparent cursor-pointer inline-block min-w-[1ch]";
+        const title = isOriginal
+          ? `${part.type} - ${Math.round(part.confidence * 100)}%`
+          : `已脱敏: ${part.type}`;
+        return (
+          <span
+            key={`match-${part.matchId}-${idx}`}
+            className={className}
+            title={title}
+            onClick={onClick}
+          >
+            {part.text}
+          </span>
+        );
+      };
+
+      // 走纯文本 + 命中搜索词的快速路径：没有 hit 时直接按 buildHighlightParts 渲染
+      if (visibleHits.length === 0) {
+        return parts.map((part, idx) => {
+          if (part.kind === 'text') {
+            return <span key={`text-${idx}`}>{part.text}</span>;
+          }
+          return renderMatchPart(part, idx);
+        });
+      }
+
+      // 有 hit 时：把每个 text part 再按 hit 边界切碎。
+      // 安全前提：buildHighlightParts 输出的 text part 都是连续的、按顺序覆盖 text 的区间，
+      // 因此可以用累积偏移把每个 text part 的字符位置映射回 text 的整体坐标。
+      const result: ReactElement[] = [];
+      let offsetInText = 0;
+      parts.forEach((part, partIdx) => {
+        if (part.kind === 'match') {
+          result.push(renderMatchPart(part, partIdx));
+          offsetInText += part.text.length;
+          return;
+        }
+        // text part：在 [offsetInText, offsetInText + part.text.length) 区间内，可能有 hit
+        const partStart = offsetInText;
+        const partEnd = partStart + part.text.length;
+        const hitsInThisPart = visibleHits
+          .filter(h => h.start >= partStart && h.start < partEnd)
+          .sort((a, b) => a.start - b.start);
+
+        if (hitsInThisPart.length === 0) {
+          result.push(<span key={`text-${partIdx}`}>{part.text}</span>);
+          offsetInText += part.text.length;
+          return;
+        }
+
+        let cursor = 0; // chars consumed within part.text
+        hitsInThisPart.forEach((hit, hitIdx) => {
+          const relStart = hit.start - partStart;
+          const relEnd = Math.min(hit.end - partStart, part.text.length);
+          if (relStart > cursor) {
+            result.push(<span key={`text-${partIdx}-${hitIdx}`}>{part.text.slice(cursor, relStart)}</span>);
+          }
+          result.push(
+            <mark
+              key={`hit-${hit.index}`}
+              id={`search-hit-${hit.index}`}
+              className="bg-blue-200 dark:bg-blue-800 dark:text-blue-100 rounded px-0.5 cursor-pointer"
+              title={`第 ${hit.index + 1} 处命中「${hit.value}」`}
+              onClick={() => handleJumpToSearchHit(hit.index)}
+            >
+              {part.text.slice(Math.max(cursor, relStart), relEnd)}
+            </mark>
+          );
+          cursor = relEnd;
+        });
+        if (cursor < part.text.length) {
+          result.push(<span key={`text-${partIdx}-tail`}>{part.text.slice(cursor)}</span>);
+        }
+        offsetInText += part.text.length;
+      });
+      return result;
+    },
+    [toggleMatchSelection, localSelected, renderKey, handleJumpToSearchHit]
+  );
+
+  // originalTextFull / previewText 已在前文提前声明（handler 也要用）
 
   if (!currentFile) {
     return (
@@ -471,22 +613,42 @@ export function UploadPage() {
               <span className="font-medium">手动标记敏感信息</span>
             </div>
 
-            {/* 搜索功能 */}
+            {/* 搜索功能（两步骤：先搜出处，再勾选/全部脱敏） */}
             <div className="flex gap-2 mb-3">
               <div className="flex-1 relative">
                 <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
                 <Input
                   className="pl-9"
-                  placeholder="输入关键词搜索并一键脱敏..."
+                  placeholder="输入关键词（≥2 字），先预览再决定脱敏..."
                   value={searchKeyword}
                   onChange={(e) => setSearchKeyword(e.target.value)}
                   onKeyDown={(e) => e.key === 'Enter' && handleSearchKeyword(searchKeyword)}
                 />
               </div>
               <Button size="sm" variant="outline" onClick={() => handleSearchKeyword(searchKeyword)}>
-                搜索脱敏
+                搜索
               </Button>
             </div>
+
+            {parsedDocument && searchHits.length > 0 && (
+              <div className="mb-3">
+                <SearchResultsPanel
+                  keyword={searchKeyword}
+                  hits={searchHits}
+                  onJumpTo={handleJumpToSearchHit}
+                  onAddOne={(idx) => {
+                    const hit = searchHits.find(h => h.index === idx);
+                    if (!hit) return;
+                    addManualMatch(searchKeyword, [hit.start]);
+                    setToast(`已添加 1 处「${searchKeyword}」`);
+                    setTimeout(() => setToast(null), 2000);
+                  }}
+                  onAddChecked={handleAddCheckedSearchHits}
+                  onAddAll={handleAddAllSearchHits}
+                  onClearSearch={handleClearSearch}
+                />
+              </div>
+            )}
 
             <p className="text-sm text-muted-foreground mb-3">
               或在下方「原文」面板中划选文字，然后点击「添加」
@@ -533,7 +695,7 @@ export function UploadPage() {
                 onScroll={handleOriginalScroll}
               >
                 <pre className="whitespace-pre-wrap text-sm font-medio leading-relaxed">
-                  {renderHighlightParts(previewText, sensitiveMatches, true)}
+                  {renderHighlightParts(previewText, sensitiveMatches, true, searchHits)}
                 </pre>
                 {addBtnPos && selectedText && (
                   <button
@@ -547,9 +709,9 @@ export function UploadPage() {
                     <Plus className="h-3 w-3" /> 添加
                   </button>
                 )}
-                {originalText.length > MAX_DESENSITIZE_CHARS && (
+                {originalTextFull.length > MAX_DESENSITIZE_CHARS && (
                   <p className="text-xs text-muted-foreground mt-2 text-center">
-                    ... (还有 {originalText.length - MAX_DESENSITIZE_CHARS} 字符未显示)
+                    ... (还有 {originalTextFull.length - MAX_DESENSITIZE_CHARS} 字符未显示)
                   </p>
                 )}
               </div>
@@ -571,7 +733,7 @@ export function UploadPage() {
                 className="p-4 max-h-[450px] overflow-y-auto"
                 onScroll={handleMaskedScroll}
               >
-                {originalText ? (
+                {originalTextFull ? (
                   <pre className="whitespace-pre-wrap text-sm leading-relaxed">
                     {renderHighlightParts(previewText, sensitiveMatches, false)}
                   </pre>

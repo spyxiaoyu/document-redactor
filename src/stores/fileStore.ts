@@ -36,7 +36,7 @@ interface FileState {
   selectAllMatches: () => void;
   deselectAllMatches: () => void;
   desensitize: (password: string) => Promise<void>;
-  addManualMatch: (text: string) => void;
+  addManualMatch: (text: string, positions?: number[]) => void;
   removeMatch: (id: string) => void;
   reset: () => void;
 }
@@ -102,33 +102,52 @@ export const useFileStore = create<FileState>((set, get) => ({
 
   deselectAllMatches: () => set({ selectedMatches: new Set(), renderKey: get().renderKey + 1 }),
 
-  addManualMatch: (text) => {
+  addManualMatch: (text, positions) => {
     const { parsedDocument } = get();
     if (!parsedDocument || !text) return;
 
     const rawText = parsedDocument.rawText;
     const newMatches: SensitiveMatch[] = [];
-    let startIndex = 0;
-    let matchId = 0;
+    const matchIdBase = Date.now();
 
-    // Find all occurrences of the text
-    // eslint-disable-next-line no-constant-condition
-    while (true) {
-      const index = rawText.indexOf(text, startIndex);
-      if (index === -1) break;
-
-      const id = `manual-${Date.now()}-${matchId++}`;
-      newMatches.push({
-        id,
-        type: 'CUSTOM',
-        value: text,
-        start: index,
-        end: index + text.length,
-        confidence: 1.0,
-        context: `手动标记: ${text.slice(0, 20)}${text.length > 20 ? '...' : ''}`
+    // 三种模式：
+    //   - positions 显式给 = 在这些位置加 match（仅命中位置）
+    //   - positions 未给 / 长度为 0 = 在原文所有出现处都加（向后兼容老调用方）
+    if (positions && positions.length > 0) {
+      positions.forEach((idx, i) => {
+        if (idx < 0 || idx + text.length > rawText.length) return;
+        newMatches.push({
+          id: `manual-${matchIdBase}-${i}`,
+          type: 'CUSTOM',
+          value: text,
+          start: idx,
+          end: idx + text.length,
+          confidence: 1.0,
+          context: `手动标记: ${text.slice(0, 20)}${text.length > 20 ? '...' : ''}`
+        });
       });
+    } else {
+      // Find all occurrences of the text
+      let startIndex = 0;
+      let matchId = 0;
+      // eslint-disable-next-line no-constant-condition
+      while (true) {
+        const index = rawText.indexOf(text, startIndex);
+        if (index === -1) break;
 
-      startIndex = index + 1;
+        newMatches.push({
+          id: `manual-${matchIdBase}-${matchId}`,
+          type: 'CUSTOM',
+          value: text,
+          start: index,
+          end: index + text.length,
+          confidence: 1.0,
+          context: `手动标记: ${text.slice(0, 20)}${text.length > 20 ? '...' : ''}`
+        });
+
+        startIndex = index + 1;
+        matchId++;
+      }
     }
 
     if (newMatches.length > 0) {

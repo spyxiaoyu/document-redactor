@@ -1,4 +1,4 @@
-import { useCallback, useRef } from 'react';
+import { useCallback, useRef, useState } from 'react';
 import { Upload, FileText, FileSpreadsheet, Presentation } from 'lucide-react';
 import { clsx } from 'clsx';
 import { formatFileSize } from '@/utils';
@@ -22,6 +22,10 @@ const formatIcons: Record<string, typeof FileText> = {
 
 export function FileUploader({ onFileSelect, accept, className }: FileUploaderProps) {
   const inputRef = useRef<HTMLInputElement>(null);
+  const [isDragging, setIsDragging] = useState(false);
+  // dragCounter 解决 dragenter/dragleave 在子节点上反复触发的"闪"问题
+  // 进入子节点 = +1，离开子节点 = -1，归零才算真正离开容器
+  const dragCounter = useRef(0);
 
   const handleFileChange = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -30,15 +34,75 @@ export function FileUploader({ onFileSelect, accept, className }: FileUploaderPr
     e.target.value = '';
   }, [onFileSelect]);
 
+  const handleDragEnter = useCallback((e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    dragCounter.current += 1;
+    if (e.dataTransfer.items && e.dataTransfer.items.length > 0) {
+      setIsDragging(true);
+    }
+  }, []);
+
+  const handleDragLeave = useCallback((e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    dragCounter.current -= 1;
+    if (dragCounter.current === 0) {
+      setIsDragging(false);
+    }
+  }, []);
+
+  const handleDragOver = useCallback((e: React.DragEvent) => {
+    // 必须阻止默认行为，drop 才会触发
+    e.preventDefault();
+    e.stopPropagation();
+  }, []);
+
+  const handleDrop = useCallback((e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    dragCounter.current = 0;
+    setIsDragging(false);
+    const file = e.dataTransfer.files?.[0];
+    if (file) onFileSelect(file);
+  }, [onFileSelect]);
+
+  const handleClick = useCallback(() => {
+    inputRef.current?.click();
+  }, []);
+
   return (
-    <label
+    <div
+      role="button"
+      tabIndex={0}
+      onClick={handleClick}
+      onKeyDown={(e) => {
+        if (e.key === 'Enter' || e.key === ' ') {
+          e.preventDefault();
+          handleClick();
+        }
+      }}
+      onDragEnter={handleDragEnter}
+      onDragLeave={handleDragLeave}
+      onDragOver={handleDragOver}
+      onDrop={handleDrop}
       className={clsx(
-        'flex flex-col items-center justify-center rounded-lg border-2 border-dashed border-muted-foreground/25 p-8 transition-colors hover:border-primary/50 cursor-pointer',
+        'flex flex-col items-center justify-center rounded-lg border-2 border-dashed p-8 transition-colors cursor-pointer select-none',
+        isDragging
+          ? 'border-primary bg-primary/10 ring-2 ring-primary'
+          : 'border-muted-foreground/25 hover:border-primary/50',
         className
       )}
     >
-      <Upload className="mb-4 h-12 w-12 text-muted-foreground" />
-      <p className="mb-2 text-lg font-medium">拖拽文件到此处或点击上传</p>
+      <Upload
+        className={clsx(
+          'mb-4 h-12 w-12 transition-colors',
+          isDragging ? 'text-primary' : 'text-muted-foreground'
+        )}
+      />
+      <p className={clsx('mb-2 text-lg font-medium', isDragging && 'text-primary')}>
+        {isDragging ? '松开鼠标即可上传' : '拖拽文件到此处或点击上传'}
+      </p>
       <p className="text-sm text-muted-foreground">
         支持 PDF、Word、Excel、图片等格式
       </p>
@@ -49,7 +113,7 @@ export function FileUploader({ onFileSelect, accept, className }: FileUploaderPr
         onChange={handleFileChange}
         className="hidden"
       />
-    </label>
+    </div>
   );
 }
 
