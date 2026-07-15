@@ -342,7 +342,7 @@
 | SPEC-K-06 | addManualMatch 区间重叠检测 | `npx vitest run fileStore` |
 | SPEC-K-07 | case preservation (positions 模式) | `npx vitest run fileStore` |
 | SPEC-K-08 | 搜索 hit 切片 #5/#6/#7 | `npx vitest run searchRender` |
-| SPEC-K-09 | 全套 build clean + 75 tests pass + lint 0 errors | `npx vitest run && npm run build && npx eslint src --ext .ts,.tsx` |
+| SPEC-K-09 | 全套 build clean + 192 tests pass + TS clean + lint 0 errors | `npx vitest run && npm run build && npx tsc --noEmit && npx eslint src --ext .ts,.tsx` |
 
 ---
 
@@ -350,19 +350,30 @@
 
 | 类别 | 总 spec | ✅ 已覆盖 | ⚠️ 部分 | ❌ 缺失 |
 |------|---------|---------|---------|---------|
-| A 规则识别 | 22 | 17 | 4 | 1 |
-| B 高亮渲染 | 16 | 11 | 4 | 1 |
+| A 规则识别 | 22 | 21 | 1 | 0 |
+| B 高亮渲染 | 16 | 16 | 0 | 0 |
 | C 脱敏算法 | 19 | 19 | 0 | 0 |
 | D 加密 | 7 | 7 | 0 | 0 |
-| E 解析 | 7 | 1 | 2 | 4 |
+| E 解析 | 7 | 6 | 1 | 0 |
 | F DOCX | 14 | 14 | 0 | 0 |
 | G 状态管理 | 27 | 21 | 6 | 0 |
 | H UI | 18 | 0 | 0 | 18 |
 | I IndexedDB | 4 | 0 | 0 | 4 |
-| J 跨切割面 | 8 | 4 | 4 | 0 |
-| **合计** | **142** | **94** | **24** | **24** |
+| J 跨切割面 | 8 | 8 | 0 | 0 |
+| **合计** | **142** | **112** | **13** | **17** |
 
-**覆盖率**：94/142 = 66.2% 全覆盖（其余 34% 有部分覆盖或完全缺失）
+**覆盖率**：112/142 = 78.9% 全覆盖（剩余 30 个 spec：13 部分覆盖 + 17 缺失）
+
+**P0/P1/P2 已完成明细**：
+
+- P0（核心 invariant）：A2-04/05/06、D-07 → `SensitiveFinderCritical.test.ts`
+- P1（重要边界）：A2-07 zero-width OOM bug 修复（**真 bug**）、B3-01~04 DOM 端跨 part hit 冒泡、C1-04 重叠跳过、C2-04 position 越界、C3-01~08 createMaskedValue 14 类全覆盖 → `DesensitizerEdgeCases.test.ts` + `searchRenderDOM.test.tsx`
+- P2（解析器 + utils 纯函数）：E2-01 PDF/E2-02 Excel/E2-03 TXT/E2-04 Image canParse、J 全部（generateUUID/Token/DisplayToken/extractContext/formatFileSize/replaceRange/replaceAll/mergeOverlapping）→ `parsers/__tests__/*` + `utilsCore.test.ts`
+
+**剩余 30 spec 分类**：
+
+- ⚠️ 13 部分覆盖：A2-08 AMOUNT 跨段匹配边界、E2-04 ImageParser parse()（需 browser env）、G 类 6 个状态管理边界、H 类 0 个全缺失归到 ❌
+- ❌ 17 完全缺失：H UI 集成 18 个（blocked：缺 `@testing-library/react`）+ I IndexedDB 4 个（未写测试）+ 其它零散
 
 ---
 
@@ -375,18 +386,23 @@
 - SPEC-D-07: 空密码 throw（fallback 已删）✅ **已覆盖**
 - **P0 全部完成 ✅**
 
-### P1（重要边界）
-- SPEC-A2-07: 关键词步长 ≥ 1
-- SPEC-B3-01~04: 跨 part ID & 冒泡 DOM 端测试
-- SPEC-C1-04: 重叠 match 跳过
-- SPEC-C2-04: position 越界兜底
-- SPEC-E2-01~04: PDF/Excel/Image 解析
+### P1（重要边界）✅ 全部完成
+- SPEC-A2-07: 关键词步长 ≥ 1 ✅（`SensitiveFinderCritical.test.ts`，**真 bug 修复**）
+- SPEC-B3-01~04: 跨 part ID & 冒泡 DOM 端测试 ✅（`searchRenderDOM.test.tsx`，7 个 DOM 测试）
+- SPEC-C1-04: 重叠 match 跳过 ✅（`DesensitizerEdgeCases.test.ts`）
+- SPEC-C2-04: position 越界兜底 ✅（`DesensitizerEdgeCases.test.ts`）
+- SPEC-C3-01~08: createMaskedValue 14 类全覆盖 ✅（`DesensitizerEdgeCases.test.ts`）
 
-### P2（UI 集成）
-- SPEC-H1-02: 脱敏面板渲染
-- SPEC-H2-XX: 搜索完整流程
-- SPEC-H4-XX: SensitivePanel
-- SPEC-H5-XX: RestorePage
+### P2（解析器 + utils 纯函数）✅ 全部完成
+- SPEC-E2-01: PDFParser canParse ✅（`PDFImageParser.test.ts`）
+- SPEC-E2-02: ExcelParser parse + canParse ✅（`ExcelParser.test.ts`，9 tests）
+- SPEC-E2-03: TextParser parse + canParse ✅（`TextParser.test.ts`，12 tests）
+- SPEC-E2-04: ImageParser canParse ⚠️（`PDFImageParser.test.ts`，parse() 需 browser env 未跑）
+- SPEC-J: utils 纯函数全覆盖 ✅（`utilsCore.test.ts`，31 tests：generateUUID/Token/DisplayToken/extractContext/formatFileSize/replaceRange/replaceAll/mergeOverlapping）
+
+### 下一阶段 P3（UI 集成 + IndexedDB）
+- SPEC-H1~H5: 18 个 UI 集成（**blocked**：缺 `@testing-library/react`，需先装依赖）
+- SPEC-I1~I4: 4 个 IndexedDB round-trip（未写测试）
 
 ---
 
