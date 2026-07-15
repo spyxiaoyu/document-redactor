@@ -208,11 +208,12 @@ export function UploadPage() {
   }, []);
 
   // 跳转到指定 hit 在原文的位置
+  // hit 在 DOM 里的 id 格式: search-hit-{index}-s{partIdx}-{hitIdx}（跨 part 时多个 slice）
+  // 用 querySelectorAll + first 定位到 hit 起点 slice
   const handleJumpToSearchHit = useCallback((index: number) => {
-    // 每个 hit 在原文面板用 <mark id={`search-hit-${index}`}> 标记，
-    // 通过 DOM 找到并 scrollIntoView。
     setTimeout(() => {
-      const el = document.getElementById(`search-hit-${index}`);
+      // 找第一个 data-search-hit={index} 的元素（hit 起点）
+      const el = document.querySelector(`[data-search-hit="${index}"]`);
       if (el) {
         el.scrollIntoView({ behavior: 'smooth', block: 'center' });
       }
@@ -530,44 +531,59 @@ export function UploadPage() {
         });
       }
 
-      // 有 hit 时：把每个 text part 再按 hit 边界切碎。
+      // 有 hit 时：把每个 part 再按 hit 边界切碎（text part 和 match part 都要切）。
       // 安全前提：buildHighlightParts 输出的 text part 都是连续的、按顺序覆盖 text 的区间，
-      // 因此可以用累积偏移把每个 text part 的字符位置映射回 text 的整体坐标。
+      // 因此可以用累积偏移把每个 part 的字符位置映射回 text 的整体坐标。
+      //
+      // match part 也要切的原因：搜索 hit 可能完全 / 部分落在 auto-detected match 内部，
+      // 之前只切 text part → match 内的 hit 既不渲染 mark，scrollIntoView 也找不到 target。
+      // 修法：match part 内部也按 hit 切碎，hit 段渲染 <mark id="search-hit-i">，jump 可用。
       const result: ReactElement[] = [];
       let offsetInText = 0;
       parts.forEach((part, partIdx) => {
-        if (part.kind === 'match') {
-          result.push(renderMatchPart(part, partIdx));
-          offsetInText += part.text.length;
-          return;
-        }
-        // text part：在 [offsetInText, offsetInText + part.text.length) 区间内，可能有 hit
         const partStart = offsetInText;
         const partEnd = partStart + part.text.length;
+        offsetInText = partEnd;
+
         const hitsInThisPart = visibleHits
-          .filter(h => h.start >= partStart && h.start < partEnd)
+          // 用 overlap 判定，不要用 h.start 落在 part 内 —— 否则跨 part 的 hit
+          // (前半在 A part、后半在 B part) 在 B part 不会渲染。
+          .filter(h => h.start < partEnd && h.end > partStart)
           .sort((a, b) => a.start - b.start);
 
         if (hitsInThisPart.length === 0) {
-          result.push(<span key={`text-${partIdx}`}>{part.text}</span>);
-          offsetInText += part.text.length;
+          if (part.kind === 'text') {
+            result.push(<span key={`text-${partIdx}`}>{part.text}</span>);
+          } else {
+            result.push(renderMatchPart(part, partIdx));
+          }
           return;
         }
 
-        let cursor = 0; // chars consumed within part.text
+        // 有 hit：按 hit 边界切碎。match part 时把整段包在 match span 里，hit 用嵌套 mark。
+        let cursor = 0;
+        const slices: ReactElement[] = [];
         hitsInThisPart.forEach((hit, hitIdx) => {
           const relStart = hit.start - partStart;
           const relEnd = Math.min(hit.end - partStart, part.text.length);
           if (relStart > cursor) {
-            result.push(<span key={`text-${partIdx}-${hitIdx}`}>{part.text.slice(cursor, relStart)}</span>);
+            slices.push(<span key={`pre-${partIdx}-${hitIdx}`}>{part.text.slice(cursor, relStart)}</span>);
           }
-          result.push(
+          // 跨 part 的 hit 会被切到多个 mark，用 {hit.index}-s{partIdx}-{hitIdx} 避免 id 重复
+          // handleJumpToSearchHit 用 querySelectorAll + first 来定位到 hit 起点
+          slices.push(
             <mark
-              key={`hit-${hit.index}`}
-              id={`search-hit-${hit.index}`}
-              className="bg-blue-200 dark:bg-blue-800 dark:text-blue-100 rounded px-0.5 cursor-pointer"
+              key={`hit-${hit.index}-${partIdx}-${hitIdx}`}
+              data-search-hit={hit.index}
+              id={`search-hit-${hit.index}-s${partIdx}-${hitIdx}`}
+              className="bg-blue-200 dark:bg-blue-800 dark:text-blue-100 rounded px-0.5 cursor-pointer underline decoration-2"
               title={`第 ${hit.index + 1} 处命中「${hit.value}」`}
-              onClick={() => handleJumpToSearchHit(hit.index)}
+              // mark 嵌套在 match span 里时，mark 的 onClick 触发后会冒泡到 match 的 onClick
+              // → match 会被错误地取消选中。stopPropagation 阻断冒泡
+              onClick={(e) => {
+                e.stopPropagation();
+                handleJumpToSearchHit(hit.index);
+              }}
             >
               {part.text.slice(Math.max(cursor, relStart), relEnd)}
             </mark>
@@ -575,7 +591,30 @@ export function UploadPage() {
           cursor = relEnd;
         });
         if (cursor < part.text.length) {
-          result.push(<span key={`text-${partIdx}-tail`}>{part.text.slice(cursor)}</span>);
+          slices.push(<span key={`post-${partIdx}`}>{part.text.slice(cursor)}</span>);
+        }
+
+        if (part.kind === 'text') {
+          result.push(...slices);
+        } else {
+          // match part：把整段包在 match span 里，hit 用嵌套 mark
+          const onClick = () => toggleMatchSelection(part.matchId);
+          const className = isOriginal
+            ? "px-0.5 py-0.5 rounded cursor-pointer bg-yellow-200 dark:bg-yellow-800 dark:text-yellow-200 hover:bg-yellow-300 dark:hover:bg-yellow-700 ring-2 ring-primary"
+            : "border-b border-black text-transparent cursor-pointer inline-block min-w-[1ch]";
+          const title = isOriginal
+            ? `${part.type} - ${Math.round(part.confidence * 100)}%`
+            : `已脱敏: ${part.type}`;
+          result.push(
+            <span
+              key={`match-${part.matchId}-${partIdx}`}
+              className={className}
+              title={title}
+              onClick={onClick}
+            >
+              {slices}
+            </span>
+          );
         }
         offsetInText += part.text.length;
       });
