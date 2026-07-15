@@ -34,10 +34,10 @@
 | SPEC-A2-01 | TAX_ID capture group 只匹配税号本体（label "纳税人识别号：" 不进 match.value）| 985ae11 | `TaxIdRule.test.ts` |
 | SPEC-A2-02 | NAME 使用 lookbehind，label "姓名：" 不进 match.value | 985ae11 | `BuiltinRulesCoverage.test.ts` |
 | SPEC-A2-03 | COMPANY 后缀优先级：长后缀先匹配（"集团有限公司" > "公司"）| f7341ae | `BuiltinRulesCoverage.test.ts` |
-| SPEC-A2-04 | COMPANY 排除词："关联公司"、"甲方公司"、"乙方公司" 不识别 | 历史规则 | ❌（缺独立测试）|
-| SPEC-A2-05 | 重叠 match 选更长的（`mergeOverlappingValueAware`）| 985ae11 | ❌（缺独立测试）|
-| SPEC-A2-06 | 重叠 match value 与区间必须一致：`text.slice(m.start, m.start + m.value.length) === m.value` | 985ae11 | ❌（缺独立测试）|
-| SPEC-A2-07 | 关键词步长 ≥ 1（避免 zero-width regex 死循环）| 4063d7d | ❌（缺独立测试）|
+| SPEC-A2-04 | COMPANY 排除词："关联公司"、"甲方公司"、"乙方公司" 不识别 | 历史规则 | ✅ `SensitiveFinderCritical.test.ts` |
+| SPEC-A2-05 | 重叠 match 选更长的（`mergeOverlappingValueAware`）| 985ae11 | ✅ `SensitiveFinderCritical.test.ts` |
+| SPEC-A2-06 | 重叠 match value 与区间必须一致：`text.slice(m.start, m.start + m.value.length) === m.value` | 985ae11 | ✅ `SensitiveFinderCritical.test.ts` |
+| SPEC-A2-07 | 关键词步长 ≥ 1（避免 zero-width regex 死循环）| **7e9fdf8（OOM bug 修复）**| ✅ `SensitiveFinderCritical.test.ts` |
 | SPEC-A2-08 | AMOUNT 大写金额不能跨段匹配（"人民币"前缀允许）| 历史规则 | `BuiltinRulesCoverage.test.ts` |
 
 ---
@@ -127,7 +127,7 @@
 | SPEC-D-04 | 错密码抛错（不能用宽 catch 翻译为"密码错误"）| 🔒 c17a117 | `E2ERoundTrip.test.ts`（需补 err.name 分类）|
 | SPEC-D-05 | encryptMappingTable → decryptMappingTable 一致 | ✅ | `E2ERoundTrip.test.ts` |
 | SPEC-D-06 | 跨环境：浏览器 subtle vs Node crypto subtle 一致 | 🔒 1a09838 | `DocxOutput.test.ts` |
-| SPEC-D-07 | fallback 密码 `desensitizer-meta` **已删**，空密码 throw | 🔒 4063d7d | ❌（需要补单测）|
+| SPEC-D-07 | fallback 密码 `desensitizer-meta` **已删**，空密码 throw | 🔒 4063d7d | ✅ `SensitiveFinderCritical.test.ts` |
 
 ---
 
@@ -350,29 +350,30 @@
 
 | 类别 | 总 spec | ✅ 已覆盖 | ⚠️ 部分 | ❌ 缺失 |
 |------|---------|---------|---------|---------|
-| A 规则识别 | 22 | 14 | 6 | 2 |
+| A 规则识别 | 22 | 17 | 4 | 1 |
 | B 高亮渲染 | 16 | 8 | 4 | 4 |
 | C 脱敏算法 | 19 | 8 | 11 | 0 |
-| D 加密 | 7 | 6 | 1 | 0 |
+| D 加密 | 7 | 7 | 0 | 0 |
 | E 解析 | 7 | 1 | 2 | 4 |
 | F DOCX | 14 | 14 | 0 | 0 |
 | G 状态管理 | 27 | 21 | 6 | 0 |
 | H UI | 18 | 0 | 0 | 18 |
 | I IndexedDB | 4 | 0 | 0 | 4 |
 | J 跨切割面 | 8 | 4 | 4 | 0 |
-| **合计** | **142** | **76** | **34** | **32** |
+| **合计** | **142** | **80** | **38** | **24** |
 
-**覆盖率**：76/142 = 53.5% 全覆盖（其余 47% 有部分覆盖或完全缺失）
+**覆盖率**：80/142 = 56.3% 全覆盖（其余 44% 有部分覆盖或完全缺失）
 
 ---
 
 ## 🚨 缺失测试优先级
 
 ### P0（核心功能缺失测试）
-- SPEC-A2-04: COMPANY 排除词（"关联公司"、"甲方公司"）
-- SPEC-A2-05: mergeOverlappingValueAware 重叠选更长
-- SPEC-A2-06: value 与区间一致性 invariant
-- SPEC-D-07: 空密码 throw（fallback 已删）
+- SPEC-A2-04: COMPANY 排除词（"关联公司"、"甲方公司"）✅ **已覆盖**（`SensitiveFinderCritical.test.ts`）
+- SPEC-A2-05: mergeOverlappingValueAware 重叠选更长 ✅ **已覆盖**
+- SPEC-A2-06: value 与区间一致性 invariant ✅ **已覆盖**
+- SPEC-D-07: 空密码 throw（fallback 已删）✅ **已覆盖**
+- **P0 全部完成 ✅**
 
 ### P1（重要边界）
 - SPEC-A2-07: 关键词步长 ≥ 1

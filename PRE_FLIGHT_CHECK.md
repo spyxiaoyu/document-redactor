@@ -193,6 +193,21 @@ npx eslint src --ext .ts,.tsx 2>&1 | tail -10
 3. 更新 MEMORY.md 的 commit 表
 4. **绝对不删除**之前的检查项——历史 bug 永远可能复现
 
+### §11.1 Zero-width 死循环防护（commit `7e9fdf8` 根治）
+
+**历史 bug**：SensitiveFinder.addKeywords(['']) 触发 V8 OOM
+- 根因：`indexOf('', index)` 永远返回 `index`（空串匹配每个位置），循环里 `lastIndex + keyword.length === lastIndex` → 死循环
+- 影响：用户传空 keyword → 浏览器 OOM → 整个 app 崩
+
+**修法**：addKeywords 入口过滤 `k.length > 0`，永不进入循环
+
+**检查方法**：
+- [ ] 任何 regex loop（`while (pattern.exec(text))`、`while (text.indexOf(...) !== -1)`）都要考虑 zero-width pattern / 空 keyword
+- [ ] addKeywords / addRule 等 set 操作入口必须过滤空 pattern
+- [ ] 用空 keyword / zero-width regex 跑一遍 findSensitiveContent，断言 < 1s 返回 + 不 OOM
+
+**新测试**：`src/engines/__tests__/SensitiveFinderCritical.test.ts` → `SPEC-A2-07: 关键词步长 ≥ 1（zero-width 死循环防护）`
+
 ---
 
 ## 📋 一句话口诀
