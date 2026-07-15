@@ -76,6 +76,15 @@ export function UploadPage() {
     }
   }, [sensitiveMatches]);
 
+  // 切文件时清空搜索脱敏状态。
+  // Bug：之前 user 上传文件 A 后搜索"abc"得到 3 个 hits，直接拖拽文件 B（不走 reset）
+  // → searchHits / searchKeyword 仍残留 A 的数据 → 在新文件渲染搜索结果面板误导用户。
+  // 兜底：handleReset + handleFileSelect 也会清，但 useEffect 是 single source of truth。
+  useEffect(() => {
+    setSearchHits([]);
+    setSearchKeyword('');
+  }, [parsedDocument]);
+
   // 同步滚动 refs（分开标记，防止互相触发死循环）
   const originalPanelRef = useRef<HTMLDivElement>(null);
   const maskedPanelRef = useRef<HTMLDivElement>(null);
@@ -103,15 +112,19 @@ export function UploadPage() {
   }, []);
 
   // 两步骤搜索脱敏：第一步 = 在原文中找出所有命中位置，列出"含此关键词的条款"
+  // 搜索范围限定 previewText（截断后可见的部分）：
+  //   - 避免大文件全文本搜索浪费内存
+  //   - 避免命中超出预览区时 mark 不渲染、jump 跳转 no-op
+  //   - previewText 是 originalTextFull 的前缀切片，所以 hit.start 仍是 originalTextFull 里的有效坐标
   const handleSearchKeyword = useCallback((keyword: string) => {
     setSearchKeyword(keyword);
-    if (!keyword || keyword.length < 2 || !originalTextFull) {
+    if (!keyword || keyword.length < 2 || !previewText) {
       setSearchHits([]);
       return;
     }
 
     // 大小写不敏感搜索（找位置），但 value 用原文 case（用于后续 addManualMatch）
-    const lowerText = originalTextFull.toLowerCase();
+    const lowerText = previewText.toLowerCase();
     const lowerKeyword = keyword.toLowerCase();
     const hits: SearchHit[] = [];
     let pos = 0;
@@ -121,13 +134,13 @@ export function UploadPage() {
       if (found === -1) break;
       const start = found;
       const end = found + keyword.length;
-      const contextBeforeRaw = originalTextFull.slice(Math.max(0, start - 30), start);
-      const contextAfterRaw = originalTextFull.slice(end, Math.min(originalTextFull.length, end + 30));
+      const contextBeforeRaw = previewText.slice(Math.max(0, start - 30), start);
+      const contextAfterRaw = previewText.slice(end, Math.min(previewText.length, end + 30));
       hits.push({
         index: idx,
         start,
         end,
-        value: originalTextFull.slice(start, end),
+        value: previewText.slice(start, end),
         contextBefore: contextBeforeRaw.length === 30 ? '…' + contextBeforeRaw.slice(-29) : contextBeforeRaw,
         contextAfter: contextAfterRaw.length === 30 ? contextAfterRaw.slice(0, 29) + '…' : contextAfterRaw,
       });
@@ -135,31 +148,58 @@ export function UploadPage() {
       idx++;
     }
     setSearchHits(hits);
-  }, [originalTextFull]);
+  }, [previewText]);
 
   // 把 SearchResultsPanel 选中的命中转成 sensitive match
+  // 关键：按 hit.value（原文真实 case）分组，对每个 unique value 调一次 addManualMatch。
+  // 这样无论用户输入的 keyword case 与原文是否一致，所有命中都被正确脱敏且保留原文大小写。
   const handleAddCheckedSearchHits = useCallback((indices: number[]) => {
-    if (indices.length === 0 || !searchKeyword) return;
-    const checkedPositions = searchHits
-      .filter(h => indices.includes(h.index))
-      .map(h => h.start);
-    if (checkedPositions.length === 0) return;
-    addManualMatch(searchKeyword, checkedPositions);
-    setToast(`已添加 ${checkedPositions.length} 处「${searchKeyword}」为敏感词`);
-    setTimeout(() => setToast(null), 2000);
-    setSearchHits([]);
-    setSearchKeyword('');
-  }, [searchHits, searchKeyword, addManualMatch]);
+    if (indices.length === 0) return;
+    const checkedHits = searchHits.filter(h => indices.includes(h.index));
+    if (checkedHits.length === 0) return;
 
-  // 一键脱敏所有命中（按 keyword 一次性 addManualMatch → 内部会找全部位置）
-  const handleAddAllSearchHits = useCallback(() => {
-    if (!searchKeyword || searchHits.length === 0) return;
-    addManualMatch(searchKeyword); // 不传 positions → 全量加
-    setToast(`已添加 ${searchHits.length} 处「${searchKeyword}」为敏感词`);
+    // 按 value 分组（同一 value 的位置一起处理）
+    const byValue = new Map<string, number[]>();
+    checkedHits.forEach(h => {
+      const arr = byValue.get(h.value) || [];
+      arr.push(h.start);
+      byValue.set(h.value, arr);
+    });
+
+    let totalAdded = 0;
+    byValue.forEach((positions, value) => {
+      addManualMatch(value, positions);
+      totalAdded += positions.length;
+    });
+
+    setToast(`已添加 ${totalAdded} 处为敏感词`);
     setTimeout(() => setToast(null), 2000);
     setSearchHits([]);
     setSearchKeyword('');
-  }, [searchHits, searchKeyword, addManualMatch]);
+  }, [searchHits, addManualMatch]);
+
+  // 一键全部脱敏：用每个 hit 的 value（原文真实 case），按 value 分组调 addManualMatch
+  const handleAddAllSearchHits = useCallback(() => {
+    if (searchHits.length === 0) return;
+
+    const byValue = new Map<string, number[]>();
+    searchHits.forEach(h => {
+      const arr = byValue.get(h.value) || [];
+      arr.push(h.start);
+      byValue.set(h.value, arr);
+    });
+
+    let totalAdded = 0;
+    byValue.forEach((positions, value) => {
+      addManualMatch(value, positions);
+      totalAdded += positions.length;
+    });
+
+    setToast(`已添加 ${totalAdded} 处为敏感词`);
+    setTimeout(() => setToast(null), 2000);
+    setSearchHits([]);
+    setSearchKeyword('');
+  }, [searchHits, addManualMatch]);
 
   // 关闭搜索结果面板
   const handleClearSearch = useCallback(() => {
@@ -181,6 +221,10 @@ export function UploadPage() {
 
   const handleFileSelect = useCallback(
     (file: File) => {
+      // 切文件前同步清掉旧文件的搜索脱敏状态，
+      // 避免大文件 parse 期间旧 searchHits 仍然渲染（useEffect cleanup 在 parseFile 完成才触发）。
+      setSearchHits([]);
+      setSearchKeyword('');
       setFile(file);
       parseFile();
     },
@@ -418,6 +462,8 @@ export function UploadPage() {
     setConfirmPassword('');
     setSelectedText('');
     setShowManualAdd(false);
+    setSearchHits([]);
+    setSearchKeyword('');
   }, [reset]);
 
   const handleTextSelection = useCallback((e: React.MouseEvent) => {
@@ -621,7 +667,11 @@ export function UploadPage() {
                   className="pl-9"
                   placeholder="输入关键词（≥2 字），先预览再决定脱敏..."
                   value={searchKeyword}
-                  onChange={(e) => setSearchKeyword(e.target.value)}
+                  // 用户开始打新关键词就清掉旧 hits，避免"label 是新词但 hits 还是旧词"的误导显示。
+                  onChange={(e) => {
+                    setSearchKeyword(e.target.value);
+                    setSearchHits([]);
+                  }}
                   onKeyDown={(e) => e.key === 'Enter' && handleSearchKeyword(searchKeyword)}
                 />
               </div>
@@ -639,8 +689,9 @@ export function UploadPage() {
                   onAddOne={(idx) => {
                     const hit = searchHits.find(h => h.index === idx);
                     if (!hit) return;
-                    addManualMatch(searchKeyword, [hit.start]);
-                    setToast(`已添加 1 处「${searchKeyword}」`);
+                    // 用 hit.value（原文真实 case）而非 searchKeyword，避免大小写丢失
+                    addManualMatch(hit.value, [hit.start]);
+                    setToast(`已添加 1 处「${hit.value}」`);
                     setTimeout(() => setToast(null), 2000);
                   }}
                   onAddChecked={handleAddCheckedSearchHits}

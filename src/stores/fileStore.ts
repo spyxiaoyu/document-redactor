@@ -116,14 +116,19 @@ export const useFileStore = create<FileState>((set, get) => ({
     if (positions && positions.length > 0) {
       positions.forEach((idx, i) => {
         if (idx < 0 || idx + text.length > rawText.length) return;
+        // 关键：用原文 slice 取 value，保留原文真实 case。
+        // 之前用 text（用户输入 keyword）会丢原文大小写，
+        // 比如搜 "ABC" 但原文是 "abc"，SensitiveMatch.value 写成 "ABC"，
+        // 恢复时把 "abc" 替换回 "ABC"，大小写错乱。
+        const value = rawText.slice(idx, idx + text.length);
         newMatches.push({
           id: `manual-${matchIdBase}-${i}`,
           type: 'CUSTOM',
-          value: text,
+          value,
           start: idx,
           end: idx + text.length,
           confidence: 1.0,
-          context: `手动标记: ${text.slice(0, 20)}${text.length > 20 ? '...' : ''}`
+          context: `手动标记: ${value.slice(0, 20)}${value.length > 20 ? '...' : ''}`
         });
       });
     } else {
