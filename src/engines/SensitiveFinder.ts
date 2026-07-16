@@ -72,14 +72,77 @@ export class SensitiveFinder {
       while ((match = pattern.exec(text)) !== null) {
         if (match[0].length === 0) { pattern.lastIndex = match.index + 1; continue; }
         const hasCaptureGroup = match.length > 1 && match[1] !== undefined;
-        const value = hasCaptureGroup ? match[1] : match[0];
+        let value = hasCaptureGroup ? match[1] : match[0];
         const offset = hasCaptureGroup ? match[0].indexOf(match[1]) : 0;
-        const start = match.index + offset;
+        let start = match.index + offset;
 
-        // COMPANY 排除词：含"关联公司"、甲方公司、乙方公司
+        // COMPANY 排除词 + body 合法性检查（regex 负向后顾 + post-filter 兜底）
+        //   - regex 已在 BuiltinRules.ts v2 加 (?<![这那每...]) + (?<!委托)(?<!代理)(?<!代表) lookbehind
+        //   - 这里兜底：body 起始位置的合同模板前缀（甲方为/委托/代理等）切断；
+        //     body 内部不动（避免误切断品牌名如"华为"中的"为"）
+        //   - 切断时同步更新 start/end 保持 SensitiveMatch invariant:
+        //     text.slice(m.start, m.start + m.value.length) === m.value
         if (rule.type === 'COMPANY') {
           if (value.includes('关联公司')) continue;
           if (/^(?:甲方|乙方)公司$/.test(value)) continue;
+
+          // 提取 body（去掉 form 后缀）—— form 必须是 capture group，否则 formMatch[2] undefined
+//   alternation 顺序：JS first-match wins，"有限公司"/"分公司"/"公司"/"集团" 必须排在
+//   "集团有限公司" 等 5 字 form 之前，让 non-greedy .+? 能正确停在 "有限公司" 处
+const formMatch = value.match(/^(.+?)(有限公司|分公司|公司|集团|集团有限公司|股份有限公司|科技有限公司|投资有限公司|实业有限公司|商贸有限公司)$/);
+if (!formMatch) continue;
+          const body = formMatch[1];
+          const form = formMatch[2];
+
+          // prefix-only 切断合同模板前缀（甲方为/委托/代理/代表/合作 等）：
+          //   - "甲方为北京SAMPLE-CO-Z" → 切"甲方为" → "北京SAMPLE-CO-Z" ✅
+          //   - "委托北京SAMPLE-CO-E公司代理SAMPLE-CO-F..." → 切"委托" → "北京SAMPLE-CO-E公司代理SAMPLE-CO-F..."
+          //   - "华为投资控股" → 不切 → "华为投资控股" ✅ ("华为"是品牌特例)
+          //   - "设计师及其所属" → 不切（"及其"不在 prefix 列表）→ "设计师及其所属" hanChars < 3 → 拒
+          // 切完后还允许再切一轮（处理 "委托...代理..." 连续 verb 前缀）：
+          let safeStart = 0;
+          const cuttablePrefix = /^(?:甲方为?|乙方为?|丙方为?|丁方为?|戊方为?|己方为?|庚方为?|辛方为?|壬方为?|癸方为?|委托|代理|代表|合作|承办|服务|负责)/;
+          while (safeStart < body.length) {
+            const m = body.slice(safeStart).match(cuttablePrefix);
+            if (!m) break;
+            const cutLength = m[0].length;
+            // 切断后允许跳过 1-4 个字符（公司名/标点）再切下一轮 verb 前缀
+            // 例 "委托" + "北京SAMPLE-CO-E" + "代理" → safeStart 累加到 "代理" 后
+            const skipRegion = body.slice(safeStart + cutLength, safeStart + cutLength + 4);
+            safeStart += cutLength;
+            // 检查 skipRegion 后面是否紧跟 verb 前缀
+            if (skipRegion.length > 0) {
+              const nextM = body.slice(safeStart).match(cuttablePrefix);
+              if (nextM) continue;  // 继续切
+            }
+            break;
+          }
+
+          // 检查 safeBody 至少 3 字汉字
+          const safeBody = body.slice(safeStart);
+          const hanChars = safeBody.match(/[\u4e00-\u9fa5]/g) || [];
+          if (hanChars.length < 3) continue;
+
+          // 二次检查：safeBody 内部仍含连词/介词/代词 → 拒
+          //   - 处理 case 3 "设计师及其所属"（"及其"是连词+代词链）
+          //   - 处理 case 14 "甲乙双方的律师和顾问"（"和"是连词，"的"是助词）
+          //   - 注意：去掉了 "为""的""了""的"等可能在真公司名中出现的字符
+          //     （如 "华为" 的 "为"、"美的集团" 的 "的"），避免误杀
+          if (/[与和及其了在出于而之则这那每该各自己诸何]/.test(safeBody)) continue;
+
+          // 如果 body 被缩短，重新计算 value / start，保持 invariant
+          if (safeStart > 0) {
+            const newValue = safeBody + form;
+            const newStart = start + safeStart;
+            const newEnd = newStart + newValue.length;
+            // invariant check: text.slice(newStart, newEnd) === newValue
+            if (text.slice(newStart, newEnd) !== newValue) {
+              console.warn(`[SensitiveFinder COMPANY] invariant break: "${text.slice(newStart, newEnd)}" !== "${newValue}"`);
+              continue;
+            }
+            value = newValue;
+            start = newStart;
+          }
         }
 
         matches.push({
