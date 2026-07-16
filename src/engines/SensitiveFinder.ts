@@ -94,14 +94,15 @@ if (!formMatch) continue;
           const body = formMatch[1];
           const form = formMatch[2];
 
-          // prefix-only 切断合同模板前缀（甲方为/委托/代理/代表/合作 等）：
+          // prefix-only 切断合同模板前缀（甲方为/委托/代理/代表/合作/经 等）：
           //   - "甲方为北京SAMPLE-CO-Z" → 切"甲方为" → "北京SAMPLE-CO-Z" ✅
-          //   - "委托北京SAMPLE-CO-E公司代理SAMPLE-CO-F..." → 切"委托" → "北京SAMPLE-CO-E公司代理SAMPLE-CO-F..."
+          //   - "委托北京SAMPLE-CO-E公司代理SAMPLE-CO-F..." → 切"委托" → "北京SAMPLE-CO-E公司代理SAMPLE-CO-F..." (mid-verb reject 兜底)
+          //   - "经维沃移动通信有限公司" → 切"经" → "维沃移动通信有限公司" ✅ (zcool docx [102-113] FP 修复)
           //   - "华为投资控股" → 不切 → "华为投资控股" ✅ ("华为"是品牌特例)
           //   - "设计师及其所属" → 不切（"及其"不在 prefix 列表）→ "设计师及其所属" hanChars < 3 → 拒
           // 切完后还允许再切一轮（处理 "委托...代理..." 连续 verb 前缀）：
           let safeStart = 0;
-          const cuttablePrefix = /^(?:甲方为?|乙方为?|丙方为?|丁方为?|戊方为?|己方为?|庚方为?|辛方为?|壬方为?|癸方为?|委托|代理|代表|合作|承办|服务|负责)/;
+          const cuttablePrefix = /^(?:甲方为?|乙方为?|丙方为?|丁方为?|戊方为?|己方为?|庚方为?|辛方为?|壬方为?|癸方为?|经|委托|代理|代表|合作|承办|服务|负责)/;
           while (safeStart < body.length) {
             const m = body.slice(safeStart).match(cuttablePrefix);
             if (!m) break;
@@ -126,9 +127,19 @@ if (!formMatch) continue;
           // 二次检查：safeBody 内部仍含连词/介词/代词 → 拒
           //   - 处理 case 3 "设计师及其所属"（"及其"是连词+代词链）
           //   - 处理 case 14 "甲乙双方的律师和顾问"（"和"是连词，"的"是助词）
+          //   - 处理 case 20 "设计师所属公司"（zcool docx [2426-2433] FP；"属"是代词+连词链）
           //   - 注意：去掉了 "为""的""了""的"等可能在真公司名中出现的字符
           //     （如 "华为" 的 "为"、"美的集团" 的 "的"），避免误杀
-          if (/[与和及其了在出于而之则这那每该各自己诸何]/.test(safeBody)) continue;
+          if (/[与和及其了在出于而之则这那每该各自己诸何属]/.test(safeBody)) continue;
+
+          // 三次检查：mid-verb 防御（zcool docx [116-144] FP 修复）
+          //   - "X公司委托Y公司" / "X公司代理Y公司" / "X公司代表Y公司"
+          //     regex greedy 把两家公司合成一个超长 body+form → 28 chars 错配
+          //   - 保守策略：safeBody 含 "委托"/"代理"/"代表" 且长度 > 18 → 拒绝整个匹配
+          //     用户可手动高亮两家公司
+          //   - 阈值 18：单合法公司 body 通常 < 18 char（"SAMPLE-CO-F（北京）融媒体科技文化有限" = 14 char）
+          //     例外测试 case 22 "智能代理有限公司" body 6 < 18，应保留
+          if (/(委托|代理|代表)/.test(safeBody) && safeBody.length > 18) continue;
 
           // 如果 body 被缩短，重新计算 value / start，保持 invariant
           if (safeStart > 0) {
