@@ -139,7 +139,17 @@ if (!formMatch) continue;
           //     用户可手动高亮两家公司
           //   - 阈值 18：单合法公司 body 通常 < 18 char（"SAMPLE-CO-F（北京）融媒体科技文化有限" = 14 char）
           //     例外测试 case 22 "智能代理有限公司" body 6 < 18，应保留
-          if (/(委托|代理|代表)/.test(safeBody) && safeBody.length > 18) continue;
+          // 三次检查：mid-verb SPLIT 防御（zcool docx [116-144] FP 修复）
+          //   - "X公司委托Y公司" / "X公司代理Y公司" / "X公司代表Y公司"
+          //     regex greedy 把两家公司合成一个超长 body+form → 错配
+          //   - **用户反馈：自动拆开**（不要退回 manual），分别 emit 两家
+          //   - 队列递归：每段含 verb → 沿 verb 切；左边有 form → emit；右边进队列继续
+          //   - 阈值 18：body > 18 才进 SPLIT（避免短字符串误切）
+          //   - fallback：split 全失败 → 退到普通 hanChars / reject / emit 原 merge match
+          if (/(委托|代理|代表)/.test(safeBody) && safeBody.length > 18) {
+            const emitted = splitAndEmitBody(safeBody, form, start + safeStart, text, rule, matches);
+            if (emitted > 0) continue;
+          }
 
           // 如果 body 被缩短，重新计算 value / start，保持 invariant
           if (safeStart > 0) {
@@ -200,6 +210,115 @@ if (!formMatch) continue;
   static createSimpleAmountUpperPattern(): RegExp {
     return /[零壹贰叁肆伍陆柒捌玖]+(?:[零壹贰叁肆伍陆柒捌玖]*[角分])?(?:[元整])?/g;
   }
+}
+
+/**
+ * mid-verb SPLIT 助手（"X公司委托Y公司" → emit 两家）
+ *
+ * 设计：队列递归处理（处理"委托X代理Y"多重 verb 链）
+ *   - 入参 safeBody 含 verb 链（"委托" + "代理" + "代表" 任意组合）
+ *   - 每段 chunk：
+ *     - 找到 verb → 沿 verb 切；左有 form emit；右进队列
+ *     - 无 verb → 当作最后一段，用原 form emit
+ *   - 验证策略：
+ *     - leftStr：必须以 form 结尾 + 去掉 form 后 ≥3 han chars + 无 reject chars
+ *     - rightBody：≥3 han chars + 无 reject chars + 加原 form 拼成完整公司名
+ *     - invariant 检查：text.slice(start, end) === value（防越界）
+ *
+ * Returns: emit 成功的 match 数（0 → 调用者 fallthrough 到普通 reject/emit 逻辑）
+ *
+ * @param safeBody prefix-cut 后的 body（含动词链）
+ * @param form 原 regex 匹配的 form（"有限公司" 等）— 用于 fallback 拼接
+ * @param leftStartInText safeBody 在 text 中的起始绝对位置
+ * @param text 完整文本
+ * @param rule 当前 rule（用于 weight / type）
+ * @param matches 已累积的 matches 数组（直接 push 新 match）
+ */
+function splitAndEmitBody(
+  safeBody: string,
+  form: string,
+  leftStartInText: number,
+  text: string,
+  rule: Rule,
+  matches: SensitiveMatch[],
+): number {
+  const FORM_RE = /(集团有限公司|股份有限公司|科技有限公司|投资有限公司|实业有限公司|商贸有限公司|有限公司|分公司|公司|集团)$/;
+  const VERB_RE = /(委托|代理|代表)/;
+  const REJECT_CHARS = /[与和及其了在出于而之则这那每该各自己诸何属]/;
+
+  let emitted = 0;
+  // 队列：每项是一个待处理的 body 片段 + 在 text 中相对 leftStartInText 的偏移
+  const queue: { body: string; offset: number }[] = [{ body: safeBody, offset: 0 }];
+
+  while (queue.length > 0) {
+    const cur = queue.shift()!;
+    const verbMatch = cur.body.match(VERB_RE);
+
+    if (!verbMatch) {
+      // 无 verb → 当作最终段落。用原 form 拼接 + 验证 + emit
+      const rightValue = cur.body + form;
+      const rightHan = cur.body.match(/[\u4e00-\u9fa5]/g) || [];
+      if (rightHan.length >= 3 && !REJECT_CHARS.test(cur.body)) {
+        const rs = leftStartInText + cur.offset;
+        const re = rs + rightValue.length;
+        if (text.slice(rs, re) === rightValue) {
+          matches.push({
+            id: generateUUID(),
+            type: rule.type,
+            value: rightValue,
+            start: rs,
+            end: re,
+            confidence: rule.weight,
+            context: extractContext(text, rs, 30),
+            blockId: undefined
+          });
+          emitted++;
+        }
+      }
+      continue;
+    }
+
+    const verbPos = verbMatch.index!;
+    const verbLen = verbMatch[0].length;
+    const leftStr = cur.body.slice(0, verbPos);
+    const rightBody = cur.body.slice(verbPos + verbLen);
+
+    // LEFT：必须以 form 结尾（否则不是独立公司） + 验证 body 合法
+    if (leftStr.length >= 3) {
+      const leftFormMatch = leftStr.match(FORM_RE);
+      if (leftFormMatch) {
+        const leftBody = leftStr.slice(0, leftStr.length - leftFormMatch[1].length);
+        const leftHan = leftBody.match(/[\u4e00-\u9fa5]/g) || [];
+        if (leftHan.length >= 3 && !REJECT_CHARS.test(leftBody)) {
+          const ls = leftStartInText + cur.offset;
+          const le = ls + leftStr.length;
+          if (text.slice(ls, le) === leftStr) {
+            matches.push({
+              id: generateUUID(),
+              type: rule.type,
+              value: leftStr,
+              start: ls,
+              end: le,
+              confidence: rule.weight,
+              context: extractContext(text, ls, 30),
+              blockId: undefined
+            });
+            emitted++;
+          }
+        }
+      }
+    }
+
+    // RIGHT：进队列递归处理（可能含更多 verb）
+    if (rightBody.length >= 3) {
+      queue.push({
+        body: rightBody,
+        offset: cur.offset + verbPos + verbLen
+      });
+    }
+  }
+
+  return emitted;
 }
 
 /**

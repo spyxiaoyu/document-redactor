@@ -173,13 +173,15 @@ describe('COMPANY 识别 — spy 截图 false positive 案例', () => {
   });
 
   describe('复合场景（多公司 + false positive 共存）', () => {
-    it('case 18: 复合文档段落', () => {
+    it('case 18: 复合文档段落 — split 模式（user 反馈后改）', () => {
       const text = `委托北京SAMPLE-CO-E公司代理SAMPLE-CO-F（北京）融媒体科技文化有限公司
 与这家公司和那个公司合作，每个公司都参与。`;
       const matches = findCompany(text);
       console.log(`\n[case 18] 输入: ${text.length} 字 → 匹配 ${matches.length} 个: ${JSON.stringify(matches)}`);
-      // 当前行为：mid-verb reject — 拒绝"委托X代理Y" long FP（保守策略；用户可手动高亮"北京SAMPLE-CO-E公司"和"SAMPLE-CO-F..."）
-      // 核心断言：merged FP 不应出现
+      // SPLIT 后应识别两家真公司（"北京SAMPLE-CO-E公司" 和 "SAMPLE-CO-F（北京）融媒体科技文化有限公司"）
+      expect(matches.some(m => m === '北京SAMPLE-CO-E公司')).toBe(true);
+      expect(matches.some(m => m.includes('SAMPLE-CO-F'))).toBe(true);
+      // merged FP 整体不应出现
       expect(matches.some(m => m.includes('委托北京SAMPLE-CO-E公司代理'))).toBe(false);
       // 下列 false positive 应被拒（既有 post-filter）
       expect(matches.some(m => m === '这家公司')).toBe(false);
@@ -209,12 +211,15 @@ describe('COMPANY 识别 — spy 截图 false positive 案例', () => {
       expect(matches.some(m => m === '设计师所属公司')).toBe(false);
     });
 
-    it('case 21: mid-verb (委托) 长 body 应被整体拒', () => {
-      // zcool docx [116-144] "X公司委托Y公司" 28 chars merged FP
+    it('case 21: mid-verb (委托) 长 body 应拆成两家公司（不是整体拒）', () => {
+      // zcool docx [116-144] "X公司委托Y公司" 28 chars — 用户反馈要 SPLIT 不 REJECT
       const text = '北京新意互动数字技术有限公司委托北京SAMPLE-CO-E网络科技有限公司承办';
       const matches = findCompany(text);
       console.log(`\n[case 21] 输入: "${text}" → 匹配: ${JSON.stringify(matches)}`);
-      // 保守策略：mid-verb + body 长 → 拒绝整个匹配；用户可手动添加
+      // split 期望：识别两家独立公司
+      expect(matches.some(m => m === '北京新意互动数字技术有限公司')).toBe(true);
+      expect(matches.some(m => m === '北京SAMPLE-CO-E网络科技有限公司')).toBe(true);
+      // merged FP 整体不应出现
       expect(matches.some(m => m.includes('北京新意互动数字技术有限公司委托'))).toBe(false);
     });
 
