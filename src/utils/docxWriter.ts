@@ -277,6 +277,20 @@ function applyOneOccurrence(
   if (covering.length === 1) {
     return replaceSingleNode(documentXml, covering[0], globalStart, maskedToken, originalValue);
   }
+
+  // 关键分支（commit 后续修复）：跨 <w:ins>/<w:del> 边界时禁止 merge。
+  // mergeRunsForCoverage 会把 wrapper 内的 inner <w:r> 内容当作"普通 run 块"
+  // 跳过，导致 <w:ins></w:ins> 空 wrapper + inner 文本失去 wrapper 包裹。
+  // Word 开着修订模式打开时，空 <w:ins> 触发生成"插入修订标记"，
+  // 叠加原 <w:del> 红波浪线 → 视觉段落错位（spy 截图 bug 复现）。
+  const first = covering[0];
+  const last = covering[covering.length - 1];
+  const runStart = findRunStart(documentXml, first.xmlOpenStart);
+  const runEnd = findRunEnd(documentXml, last.xmlCloseEnd);
+  if (runStart >= 0 && runEnd > runStart && hasInsOrDelBoundary(documentXml, runStart, runEnd)) {
+    return applyPerNodeReplacement(documentXml, covering, maskedToken, originalValue, globalStart);
+  }
+
   return mergeRunsForCoverage(documentXml, covering, maskedToken, originalValue);
 }
 
@@ -433,6 +447,94 @@ function findRunOpenInString(content: string, from: number): number {
     pos = idx + 4;
   }
   return -1;
+}
+
+/**
+ * 检查 [start, end) 区间内是否含 <w:ins> 或 <w:del> 边界标签（开闭标签都算）。
+ *
+ * 用于检测 maskedToken 区间是否跨过 OOXML 修订追踪 wrapper。如果跨过，
+ * mergeRunsForCoverage 会破坏 wrapper 完整性（inner <w:r> 丢失 + 空 wrapper），
+ * 必须改走 applyPerNodeReplacement per-node 替换。
+ *
+ * 字符级精确匹配：用 `<\/?w:(ins|del)\b` 排除 <w:insId> / <w:delText>
+ * 等以 ins/del 开头但不是 ins/del 标签的情况。
+ */
+function hasInsOrDelBoundary(xml: string, start: number, end: number): boolean {
+  const content = xml.slice(start, end);
+  return /<\/?w:(ins|del)\b/.test(content);
+}
+
+/**
+ * 跨 <w:ins>/<w:del> 边界的 per-node replacement —— 禁止 mergeRunsForCoverage。
+ *
+ * 为什么不 merge？
+ *   - <w:ins>/<w:del> 是 OOXML 的修订追踪 wrapper，wrapper 完整性必须保留
+ *   - mergeRunsForCoverage 会把 wrapper 内的 inner <w:r> 内容吸出来合并，
+ *     导致 <w:ins></w:ins> 空 wrapper + inner 文本失去 wrapper 包裹
+ *   - Word 开着修订模式打开时，空 <w:ins> 触发生成"插入修订标记"，
+ *     叠加原 <w:del> 红波浪线 → 视觉段落错位（spy 截图 bug）
+ *
+ * 替代方案：每个 covering <w:t> 节点独立替换自己的 maskedToken 切片，
+ * 保留所有 <w:ins>/<w:del> wrapper 完整性。
+ *
+ * 实现：从后往前处理每个节点（避免位置偏移），按 maskedToken 切片位置
+ * 切 originalValue，写回对应 <w:t> 的 innerText。
+ *
+ * maskedToken 和 originalValue 可能不等长（如 restore 时 mask token 比原文长），
+ * 按比例切 originalValue。如果 maskedToken.length === originalValue.length
+ * （这是本 codebase 的常见情况），切片是 1:1 对应。
+ */
+function applyPerNodeReplacement(
+  documentXml: string,
+  covering: PositionedTextNode[],
+  maskedToken: string,
+  originalValue: string,
+  globalStart: number,
+): string {
+  let result = documentXml;
+  const globalEnd = globalStart + maskedToken.length;
+
+  // 从后往前处理（避免位置偏移）
+  const sortedCovering = [...covering].sort((a, b) => b.globalStart - a.globalStart);
+
+  for (const node of sortedCovering) {
+    // 本节点覆盖 maskedToken 区间的范围
+    const nodeStart = Math.max(node.globalStart, globalStart);
+    const nodeEnd = Math.min(node.globalEnd, globalEnd);
+    if (nodeStart >= nodeEnd) continue;
+
+    // maskedToken 切片
+    const maskedSliceOffset = nodeStart - globalStart;
+    const maskedSliceLength = nodeEnd - nodeStart;
+
+    // originalValue 对应切片（按比例切，长度可能不等）
+    const sliceRatio = originalValue.length / maskedToken.length;
+    const origSliceStart = Math.floor(maskedSliceOffset * sliceRatio);
+    let origSliceEnd = Math.floor((maskedSliceOffset + maskedSliceLength) * sliceRatio);
+    // 防止切片为空（边界情况：originalValue 极短）
+    if (origSliceEnd <= origSliceStart && maskedSliceLength > 0) {
+      origSliceEnd = origSliceStart + 1;
+    }
+    const newTextSlice = originalValue.slice(origSliceStart, origSliceEnd);
+
+    // XML 实体转义（与 mergeRunsForCoverage 对齐）
+    const safeSlice = newTextSlice
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;');
+
+    // 替换本节点 innerText 的 [offsetInNode, offsetInNode+maskedSliceLength)
+    const offsetInNode = nodeStart - node.globalStart;
+    const innerText = result.slice(node.xmlOpenEnd, node.xmlCloseStart);
+    const newInnerText =
+      innerText.slice(0, offsetInNode) +
+      safeSlice +
+      innerText.slice(offsetInNode + maskedSliceLength);
+
+    result = result.slice(0, node.xmlOpenEnd) + newInnerText + result.slice(node.xmlCloseStart);
+  }
+
+  return result;
 }
 
 /**
