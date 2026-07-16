@@ -240,3 +240,70 @@ describe('COMPANY 识别 — spy 截图 false positive 案例', () => {
     });
   });
 });
+
+/**
+ * 配套 fix：AMOUNT_UPPER 大写金额括号截断 + BANK_CARD 前导 0（用户反馈）
+ *
+ * 两份真实 docx 暴露的相邻 bug：
+ *   - AMOUNT_UPPER "【壹拾伍万陆仟肆佰肆拾】元整" 被截成 "壹拾伍万六" 5 chars（括号断 regex）
+ *   - BANK_CARD "0413090103000048204" 被截成 "413090103000048204"（前导 0 不接受）
+ *
+ * 必须用 SensitiveFinder 真实 API 测（post-filter 不影响，但 regex 层面就错）
+ */
+import { SensitiveFinder as FinderReg } from '@/engines/SensitiveFinder';
+
+function findByType(text: string, type: string): string[] {
+  const finder = new FinderReg();
+  const result = finder.findSensitiveContent(text);
+  return result.matches.filter(m => m.type === type).map(m => m.value);
+}
+
+describe('AMOUNT_UPPER + BANK_CARD 大括号/前导 0 bug 修复', () => {
+  describe('AMOUNT_UPPER 大写金额应跨括号匹配', () => {
+    it('case A1: 【壹拾伍万陆仟肆佰肆拾】元整 应完整匹配', () => {
+      // 设备采购 docx [452-457] bug：被截 "壹拾伍万六" 5 chars
+      const text = '（大写：人民币【壹拾伍万陆仟肆佰肆拾】元整）';
+      const matches = findByType(text, 'AMOUNT_UPPER');
+      console.log(`\n[case A1] 输入: "${text}" → 匹配: ${JSON.stringify(matches)}`);
+      // 期望：完整 13 字
+      expect(matches.some(m => m === '壹拾伍万陆仟肆佰肆拾元整' || m === '壹拾伍万陆仟肆佰肆拾】元整')).toBe(true);
+      // 不应只截 5 chars
+      expect(matches.some(m => m === '壹拾伍万陆')).toBe(false);
+    });
+
+    it('case A2: 已有全字匹配不应回归', () => {
+      // 设备采购 docx [750-759] 已 pass 的 case
+      const text = '柒仟捌佰贰拾贰元整';
+      const matches = findByType(text, 'AMOUNT_UPPER');
+      console.log(`\n[case A2] 输入: "${text}" → 匹配: ${JSON.stringify(matches)}`);
+      expect(matches.some(m => m === '柒仟捌佰贰拾贰元整')).toBe(true);
+    });
+
+    it('case A3: 元 + 角 + 分 也应匹配', () => {
+      const text = '贰元叁角伍分';
+      const matches = findByType(text, 'AMOUNT_UPPER');
+      console.log(`\n[case A3] 输入: "${text}" → 匹配: ${JSON.stringify(matches)}`);
+      expect(matches.some(m => m === '贰元叁角伍分')).toBe(true);
+    });
+  });
+
+  describe('BANK_CARD 应保留前导 0', () => {
+    it('case B1: 0413090103000048204 含前导 0 应完整匹配', () => {
+      // 设备采购 docx [971-989] bug：被截 "413090103000048204" 18 chars（去前导 0）
+      const text = '账  号：【0413090103000048204】';
+      const matches = findByType(text, 'BANK_CARD');
+      console.log(`\n[case B1] 输入: "${text}" → 匹配: ${JSON.stringify(matches)}`);
+      // 期望：19 chars（含前导 0）
+      expect(matches.some(m => m.replace(/\D/g, '').endsWith('204'))).toBe(true);
+      expect(matches.some(m => m === '0413090103000048204')).toBe(true);
+    });
+
+    it('case B2: 无前导 0 不应回归', () => {
+      // 设备采购 docx [1350-1367] 已 pass: "44057601040010545" 17 chars
+      const text = '账户号: 44057601040010545';
+      const matches = findByType(text, 'BANK_CARD');
+      console.log(`\n[case B2] 输入: "${text}" → 匹配: ${JSON.stringify(matches)}`);
+      expect(matches.some(m => m === '44057601040010545')).toBe(true);
+    });
+  });
+});
