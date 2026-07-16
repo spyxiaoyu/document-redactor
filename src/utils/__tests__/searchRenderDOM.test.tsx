@@ -18,6 +18,7 @@
 import { describe, it, expect, vi } from 'vitest';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { createElement as h, Fragment } from 'react';
+import { JSDOM } from 'jsdom';
 import { buildHighlightParts } from '@/utils/highlight';
 import type { SensitiveMatch } from '@/types';
 
@@ -155,7 +156,6 @@ describe('SPEC-B3-02: mark 加 data-search-hit="N" 属性', () => {
 
   it('handleJumpToSearchHit 用 [data-search-hit="N"] querySelectorAll 能定位到 hit', () => {
     // 用 jsdom 直接验证 querySelectorAll 行为
-    const { JSDOM } = require('jsdom');
     const dom = new JSDOM('<!DOCTYPE html><html><body></body></html>');
     global.document = dom.window.document;
     global.window = dom.window;
@@ -195,7 +195,6 @@ describe('SPEC-B3-03: mark.onClick 阻止冒泡到 match.onClick', () => {
       { index: 0, start: 2, end: 4, value: '成就', contextBefore: '', contextAfter: '' },
     ];
 
-    const { JSDOM } = require('jsdom');
     const dom = new JSDOM('<!DOCTYPE html><html><body></body></html>');
     global.document = dom.window.document;
     global.window = dom.window;
@@ -249,7 +248,6 @@ describe('SPEC-B3-03: mark.onClick 阻止冒泡到 match.onClick', () => {
 
 describe('SPEC-B3-04: handleJumpToSearchHit 定位 + ID 唯一性', () => {
   it('跨 2 个 part 的 hit：querySelectorAll 找到 2 个 mark（用 first 取起点）', () => {
-    const { JSDOM } = require('jsdom');
     const dom = new JSDOM('<!DOCTYPE html><html><body></body></html>');
     global.document = dom.window.document;
     global.window = dom.window;
@@ -279,7 +277,6 @@ describe('SPEC-B3-04: handleJumpToSearchHit 定位 + ID 唯一性', () => {
   });
 
   it('HTML id 全部唯一（不允许重复）', () => {
-    const { JSDOM } = require('jsdom');
     const dom = new JSDOM('<!DOCTYPE html><html><body></body></html>');
     global.document = dom.window.document;
     global.window = dom.window;
