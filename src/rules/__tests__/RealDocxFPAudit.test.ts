@@ -116,7 +116,15 @@ describe.each(AUDIT_DOCS)('spy 真实 docx 误识别率审计: $name', (doc) => 
         if (/^(?:甲方|乙方|丙方|公司)$/.test(v.replace(/^[一-龥]{2,30}/, ''))) fp = true;
         if (/[与和及其了在出于而之则这那每该各自己诸何属]/.test(v.replace(/(有限公司|股份有限公司|科技有限公司|投资有限公司|实业有限公司|商贸有限公司|分公司|公司|集团)$/, ''))) fp = true;
       }
-      if (m.type === 'AMOUNT' && /\d{8,}/.test(v.replace(/[^\d]/g, ''))) fp = true;
+      // AMOUNT FP：纯数字 ≥10 位且无小数点 → 像电话号码格式才判 FP
+      //   旧逻辑 /\d{8,}/ 把 ¥2,744,306.00 (9 位) 和 2,645,059.15 (9 位) 这种真大金额
+      //   （2.7亿/264万）误判为 FP —— 启发式太宽
+      //   新阈值 10 位 + 必须无小数点：电话号码 11 位无小数点 → FP；
+      //   真金额必有 .xx 分位（¥X.XX / X.XX 元）→ 不算 FP
+      if (m.type === 'AMOUNT') {
+        const digits = v.replace(/[^\d]/g, '');
+        if (digits.length >= 10 && !/\./.test(v)) fp = true;
+      }
       if (m.type === 'ADDRESS' && v.length < 8) fp = true;
       if (m.type === 'NAME' && /^[这那每某]/.test(v)) fp = true;
       if (m.type === 'BANK_CARD' && /[A-Za-z]/.test(v)) fp = true;
