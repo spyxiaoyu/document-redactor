@@ -74,6 +74,7 @@ export class SensitiveFinder {
         const hasCaptureGroup = match.length > 1 && match[1] !== undefined;
         let value = hasCaptureGroup ? match[1] : match[0];
         const offset = hasCaptureGroup ? match[0].indexOf(match[1]) : 0;
+        let start = match.index + offset;
 
         // BANK_CARD post-filter v2（spy 6 docx audit — 三餐四季 [11088-11107] "4306241990006060034" 19位畸形ID FP）：
         //   BANK_CARD v3 `\d{3,6}` 让 19 位数字串被识别为银行卡，但其中一部分是畸形 ID_CARD 格式
@@ -84,10 +85,23 @@ export class SensitiveFinder {
         //     - 0413090103000048204 (19 chars, 首字符 0 不匹配 [1-9]) → 保留 ✅
         //     - 44057601040010545 (17 chars, year 6010 前缀 60 不匹配) → 保留 ✅
         //   阈值 17：ID_CARD 至少 17 位 prefix 才检查
-        if (rule.type === 'BANK_CARD' && value.length >= 17) {
-          if (/^[1-9]\d{5}(?:18|19|20)\d{2}/.test(value)) continue;
+        // v3 修复（spy 6 docx audit — 三餐四季 [12802-12818] "4502019970621042X" 17字typo身份证）：
+        //   原 16 位纯卡（如 "1234567812345678"）会被 BANK_CARD 识别，但若后接 X（ID 校验码）或
+        //   数字（更长 ID 段），实际是 17+ 位身份证 typo，不是银行卡
+        //   修法：value.length === 16 时检查下一字符
+        //     - 16 位 + X → "4502019970621042X" → 拒 ✅ (三餐四季 FP 修复)
+        //     - 16 位 + 数字 → "450201997062104212345678" 前 16 位是 ID 段 → 拒
+        //       （实际 BANK_CARD regex 会贪婪匹配到 19 位 "4502019970621042123"，但前 16 位是 ID 段，
+        //        后接数字说明是 ID 片段延伸，应整体拒 — 现有 v2 ≥17 位检查一并处理）
+        //     - 16 位 + 中文 "元" → 真卡号 → 保留 ✅
+        //     - 16 位 + 换行/空格 → 真卡号 → 保留 ✅
+        if (rule.type === 'BANK_CARD') {
+          if (value.length >= 17 && /^[1-9]\d{5}(?:18|19|20)\d{2}/.test(value)) continue;
+          if (value.length === 16) {
+            const nextChar = text[start + value.length];
+            if (nextChar && /[\dXx]/.test(nextChar)) continue;
+          }
         }
-        let start = match.index + offset;
 
         // COMPANY 排除词 + body 合法性检查（regex 负向后顾 + post-filter 兜底）
         //   - regex 已在 BuiltinRules.ts v2 加 (?<![这那每...]) + (?<!委托)(?<!代理)(?<!代表) lookbehind
@@ -113,13 +127,24 @@ if (!formMatch) continue;
           //   - "经维沃移动通信有限公司" → 切"经" → "维沃移动通信有限公司" ✅ (zcool docx [102-113] FP 修复)
           //   - "华为投资控股" → 不切 → "华为投资控股" ✅ ("华为"是品牌特例)
           //   - "设计师及其所属" → 不切（"及其"不在 prefix 列表）→ "设计师及其所属" hanChars < 3 → 拒
+          // v4 修复（spy 6 docx audit - 案例 E3/E4 真简称回归）：
+          //   - "甲方为腾讯集团" 切 "甲方为" 后剩 "腾讯" 2 hanChars
+          //     旧逻辑：<3 break → 整段拒（丢真简称） ❌
+          //     v4：放宽切，让 cuttablePrefix 命中已知模板词时即使剩余 <3 也切
+          //     → emit "腾讯集团" 4 chars（带 集团 form）✅
           // 切完后还允许再切一轮（处理 "委托...代理..." 连续 verb 前缀）：
           let safeStart = 0;
-          const cuttablePrefix = /^(?:甲方为?|乙方为?|丙方为?|丁方为?|戊方为?|己方为?|庚方为?|辛方为?|壬方为?|癸方为?|经|委托|代理|代表|合作|承办|服务|负责)/;
+          // v4 cuttablePrefix 扩展 "方为?"（spy 6 docx audit - E3 "合作方为阿里巴巴集团"）：
+          //   - "方为" 是合同 coverb 短语（"X方为..." = "X party as..."）
+          //   - 加进可切列表后 "合作方为" 连续切 2 次（先 "合作" 后 "方为"）→ "阿里巴巴"
+          //   - 单字 "方" 不切（"方正集团" 这种真简称保留）
+          const cuttablePrefix = /^(?:甲方为?|乙方为?|丙方为?|丁方为?|戊方为?|己方为?|庚方为?|辛方为?|壬方为?|癸方为?|方为?|经|委托|代理|代表|合作|承办|服务|负责)/;
           while (safeStart < body.length) {
             const m = body.slice(safeStart).match(cuttablePrefix);
             if (!m) break;
             const cutLength = m[0].length;
+            // v4 放宽切断：cuttablePrefix 命中的是已知合同模板词，直接切不论剩余长度
+            // （剩余长度兜底在外层 hanChars < 3 检查）
             // 切断后允许跳过 1-4 个字符（公司名/标点）再切下一轮 verb 前缀
             // 例 "委托" + "北京SAMPLE-CO-E" + "代理" → safeStart 累加到 "代理" 后
             const skipRegion = body.slice(safeStart + cutLength, safeStart + cutLength + 4);
@@ -133,9 +158,14 @@ if (!formMatch) continue;
           }
 
           // 检查 safeBody 至少 3 字汉字
+          // v4 例外（spy 6 docx audit - 三餐四季 [27-39] "甲方为腾讯集团" 等真简称保留）：
+          //   - 若已被 cuttablePrefix 切（即 safeStart > 0），剩余 body 可放宽到 ≥1 han char
+          //     例 "甲方为腾讯集团" 切 "甲方为" 后剩 "腾讯" 2 char，应接受（再发 "腾讯集团"）
+          //   - 不安全：纯短 body（如 "华为公司" 2 hanChars body）仍会 hanChars<3 + safeStart=0 拒
           const safeBody = body.slice(safeStart);
           const hanChars = safeBody.match(/[\u4e00-\u9fa5]/g) || [];
-          if (hanChars.length < 3) continue;
+          if (hanChars.length < 1) continue;  // safety net
+          if (hanChars.length < 3 && safeStart === 0) continue;
 
           // 二次检查：safeBody 内部仍含连词/介词/代词 → 拒
           //   - 处理 case 3 "设计师及其所属"（"及其"是连词+代词链）
@@ -144,6 +174,20 @@ if (!formMatch) continue;
           //   - 注意：去掉了 "为""的""了""的"等可能在真公司名中出现的字符
           //     （如 "华为" 的 "为"、"美的集团" 的 "的"），避免误杀
           if (/[与和及其了在出于而之则这那每该各自己诸何属]/.test(safeBody)) continue;
+
+          // 三次检查（顺位延续）：副词前缀拒（v3 spy 6 docx audit — 三餐四季 [14085-14091] FP 修复）
+          //   - "同时配合集团" / "也同样隶属于集团" / "但还需配合集团" 等叙述短语被 alt B 误识
+          //   - 单字副词（时/同/也/又/还/但/或/仍/即）常出现在真公司名（如"时代集团"/"同方集团"/"如新集团"）
+          //     → 必须 2+ 字符副词链匹配才拒绝，避免误杀"X时集团"/"Y同集团"等真简称
+          //   - 列出的 2-3 字符副词链（覆盖 spy 测试用例 + 常见中文叙述副词链）
+          //     同时 / 但还 / 但是 / 但又 / 但仍 / 但须 / 但必 / 但需 / 但得
+          //     也同 / 也得 / 也须 / 也必 / 也需 / 也仍 / 也是
+          //     仍旧 / 仍然 / 仍须 / 仍必 / 仍需 / 仍得
+          //     还是 / 仍是 / 即便 / 即是
+          //     或是 / 同样 / 又同 / 又还 / 又须 / 又得
+          //     还需 / 还能
+          //   - 注意：保留单字 "时/同/也/又" 在合法公司名里的可能性
+          if (/^(?:同时|但还|但是|但又|但仍|但须|但必|但需|但得|也同|也得|也须|也必|也需|也仍|也是|仍旧|仍然|仍须|仍必|仍需|仍得|还是|仍是|即便|即是|或是|同样|又同|又还|又须|又得|还需|还能)/.test(safeBody)) continue;
 
           // 三次检查：mid-verb 防御（zcool docx [116-144] FP 修复）
           //   - "X公司委托Y公司" / "X公司代理Y公司" / "X公司代表Y公司"

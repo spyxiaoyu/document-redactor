@@ -393,5 +393,151 @@ describe('AMOUNT_UPPER + BANK_CARD 大括号/前导 0 bug 修复', () => {
         expect(matches.some(m => m === '110101199003078811')).toBe(false);
       });
     });
+
+    describe('COMPANY alt B 副词前缀应拒 + 真简称应保', () => {
+      // 三餐四季 [14085-14091] bug："同时配合集团"被识别成公司名
+      // 根因：alt B "[\u4e00-\u9fa5]{2,8}集团" 左边界无负向后顾
+      // 修法：alt B 加 (?<![时也又同还样但或仍即复再]) 拒副词前缀
+
+      it('case E1: "同时配合集团" → 叙述短语，不应整体匹配为 COMPANY', () => {
+        const text = '对节目的价值观与主题立意进行策划，同时配合集团完成商务方案的润色与加工等工作';
+        const matches = findCompany(text);
+        console.log(`\n[case E1] 输入: "${text}" → 匹配: ${JSON.stringify(matches)}`);
+        expect(matches.some(m => m === '同时配合集团')).toBe(false);
+      });
+
+      it('case E2: "也同样隶属于集团" → 副词链仍拒', () => {
+        const text = '该业务也同样隶属于集团统一管理';
+        const matches = findCompany(text);
+        console.log(`\n[case E2] 输入: "${text}" → 匹配: ${JSON.stringify(matches)}`);
+        expect(matches.some(m => m === '也同样隶属于集团')).toBe(false);
+      });
+
+      it('case E3: 真简称 "阿里巴巴集团" 不应回归', () => {
+        const text = '合作方为阿里巴巴集团及其关联公司';
+        const matches = findCompany(text);
+        console.log(`\n[case E3] 输入: "${text}" → 匹配: ${JSON.stringify(matches)}`);
+        expect(matches).toContain('阿里巴巴集团');
+      });
+
+      it('case E4: 真简称 "腾讯集团" 不应回归', () => {
+        const text = '甲方为腾讯集团';
+        const matches = findCompany(text);
+        console.log(`\n[case E4] 输入: "${text}" → 匹配: ${JSON.stringify(matches)}`);
+        expect(matches).toContain('腾讯集团');
+      });
+
+      it('case E5: "但还需配合集团" → 多个副词连用仍拒', () => {
+        const text = '但还需配合集团核对数据';
+        const matches = findCompany(text);
+        console.log(`\n[case E5] 输入: "${text}" → 匹配: ${JSON.stringify(matches)}`);
+        expect(matches.some(m => m === '但还需配合集团')).toBe(false);
+      });
+    });
+
+    describe('TAX_ID 中文括号 + 短 label variant', () => {
+      // spy 6 docx audit - 三餐四季 [5018-5036] bug：
+      //   text: "纳税识别号：【913100007397870325】"
+      //   原 regex label alt 是 "纳税人识别号" 6 字版本 → 不匹配 "纳税识别号" 5 字版本
+      //   即使 label 改对，regex 的 `[:：]?\s*` 不允许 `【` 作分隔符，BANK_CARD 仍优先认领 18 位纯数字
+      //   → 脱敏语义错位（想脱敏"纳税识别号"，结果脱成了"银行卡号"）
+      // 修法：
+      //   1. label alt 加 "纳税识别号" 5 字版本（文档常用简写）
+      //   2. 允许 `【】（）()` 中文括号在 label 与 capture group 之间作分隔符
+
+      it('case F1: "纳税识别号：【XXX】" 应识别 TAX_ID（5字 label + 中文左括号）', () => {
+        const finder = new SensitiveFinder();
+        const text = '公司名称：【上海中视国际广告有限公司】\n纳税识别号：【913100007397870325】\n开户银行：【工行陆家嘴支行】';
+        const result = finder.findSensitiveContent(text);
+        const taxIds = result.matches.filter(m => m.type === 'TAX_ID');
+        console.log(`\n[case F1] 匹配 TAX_ID: ${JSON.stringify(taxIds.map(m => m.value))}`);
+        expect(taxIds.length).toBe(1);
+        expect(taxIds[0].value).toBe('913100007397870325');
+      });
+
+      it('case F2: "纳税人识别号：【XXX】" 应识别 TAX_ID（6字 label + 中文左括号）', () => {
+        const finder = new SensitiveFinder();
+        const text = '纳税人识别号：【91110108MA01ABCD2X】';
+        const result = finder.findSensitiveContent(text);
+        const taxIds = result.matches.filter(m => m.type === 'TAX_ID');
+        console.log(`\n[case F2] 匹配 TAX_ID: ${JSON.stringify(taxIds.map(m => m.value))}`);
+        expect(taxIds.length).toBe(1);
+        expect(taxIds[0].value).toBe('91110108MA01ABCD2X');
+      });
+
+      it('case F3: "税号：（XXX）" 应识别 TAX_ID（全角圆括号）', () => {
+        const finder = new SensitiveFinder();
+        const text = '税号：（911101053482731061）';
+        const result = finder.findSensitiveContent(text);
+        const taxIds = result.matches.filter(m => m.type === 'TAX_ID');
+        console.log(`\n[case F3] 匹配 TAX_ID: ${JSON.stringify(taxIds.map(m => m.value))}`);
+        expect(taxIds.length).toBe(1);
+        expect(taxIds[0].value).toBe('911101053482731061');
+      });
+
+      it('case F4: "税号: XXX" ASCII 标点应不回归', () => {
+        const finder = new SensitiveFinder();
+        const text = '税号: 91110108MA01ABCD2X';
+        const result = finder.findSensitiveContent(text);
+        const taxIds = result.matches.filter(m => m.type === 'TAX_ID');
+        console.log(`\n[case F4] 匹配 TAX_ID: ${JSON.stringify(taxIds.map(m => m.value))}`);
+        expect(taxIds.length).toBe(1);
+        expect(taxIds[0].value).toBe('91110108MA01ABCD2X');
+      });
+    });
+
+    describe('BANK_CARD 应排除 ID_CARD 16 位前缀 + X 片段', () => {
+      // spy 6 docx audit - 三餐四季 [12802-12818] bug：
+      //   text: "4502019970621042X"（17 字 typo 缺一位身份证 + X 校验位）
+      //   现状：BANK_CARD 只匹配前 16 位 "4502019970621042"，原 X 不在 match 范围
+      //   已有 post-filter 仅检查 length ≥17 → 16 位不挡 → 误识别为银行卡
+      // 修法：post-filter 加 v3 - 16 位 + 后接 [X/x/数字] 视为 ID_CARD 片段排除
+
+      it('case G1: 16 位 + X（"4502019970621042X"）应排除 BANK_CARD', () => {
+        const finder = new SensitiveFinder();
+        const text = '主力编剧 熊颖倩 女 4502019970621042X 18711076521';
+        const result = finder.findSensitiveContent(text);
+        const banks = result.matches.filter(m => m.type === 'BANK_CARD');
+        console.log(`\n[case G1] BANK_CARD 匹配: ${JSON.stringify(banks.map(m => m.value))}`);
+        expect(banks.some(m => m.value === '4502019970621042')).toBe(false);
+      });
+
+      it('case G2: 16 位 + 数字（"450201997062104212345678"）也应排除（继续延展为 ID 段）', () => {
+        const finder = new SensitiveFinder();
+        const text = '身份证 450201997062104212345678';
+        const result = finder.findSensitiveContent(text);
+        const banks = result.matches.filter(m => m.type === 'BANK_CARD');
+        console.log(`\n[case G2] BANK_CARD 匹配: ${JSON.stringify(banks.map(m => m.value))}`);
+        // 期望：bank 应排除前 16 位片段；但其他长数字段（如 18+ 位）可能仍被匹配
+        expect(banks.some(m => m.value === '4502019970621042')).toBe(false);
+      });
+
+      it('case G3: 纯 16 位卡（"1234567812345678"）不被后续字符延伸时，应保留 BANK_CARD', () => {
+        const finder = new SensitiveFinder();
+        const text = '开户账号：1234567812345678\n开户行：工行';
+        const result = finder.findSensitiveContent(text);
+        const banks = result.matches.filter(m => m.type === 'BANK_CARD');
+        console.log(`\n[case G3] BANK_CARD 匹配: ${JSON.stringify(banks.map(m => m.value))}`);
+        expect(banks.some(m => m.value === '1234567812345678')).toBe(true);
+      });
+
+      it('case G4: 18 位真银行卡（"4502019900001234567"）应保留', () => {
+        const finder = new SensitiveFinder();
+        const text = '开户账号：4502019900001234567';
+        const result = finder.findSensitiveContent(text);
+        const banks = result.matches.filter(m => m.type === 'BANK_CARD');
+        console.log(`\n[case G4] BANK_CARD 匹配: ${JSON.stringify(banks.map(m => m.value))}`);
+        expect(banks.some(m => m.value === '4502019900001234567')).toBe(true);
+      });
+
+      it('case G5: 16 位卡后接中文（"1234567812345678元"）应保留 BANK_CARD', () => {
+        const finder = new SensitiveFinder();
+        const text = '卡号 1234567812345678元整';
+        const result = finder.findSensitiveContent(text);
+        const banks = result.matches.filter(m => m.type === 'BANK_CARD');
+        console.log(`\n[case G5] BANK_CARD 匹配: ${JSON.stringify(banks.map(m => m.value))}`);
+        expect(banks.some(m => m.value === '1234567812345678')).toBe(true);
+      });
+    });
   });
 });

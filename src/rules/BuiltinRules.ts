@@ -28,12 +28,34 @@ export const BUILTIN_RULES: BuiltinRuleDefinition[] = [
     description: '电子邮箱地址'
   },
   {
+    type: 'TAX_ID',
+    // capture group 提取税号本体：[A-Z0-9]{15,20} 是 match[1]
+    // SensitiveFinder.ts:69-72 会用 match[1] 作为 value，这样"纳税人识别号："作为 label 保留不脱敏
+    //
+    // v2 修复（spy 6 docx audit — 三餐四季 [5018-5036] "纳税识别号：【913100007397870325】" FP）：
+    //   - 原 regex label alt 只有"纳税人识别号"（6 字），不匹配文档常用简写"纳税识别号"（5 字）
+    //   - 即使 label 改对，`[:：]?\s*` 也不允许中文 `【】（）()` 作分隔符
+    //     → BANK_CARD 抢匹配把 18 位税号当银行卡（脱敏语义错位）
+    //   - 修法：
+    //     1. label alt 加 "纳税识别号"（5 字 variant）
+    //     2. label 和 capture group 之间允许 `[（(【]?\s*` / `\s*[)）]?` 中文括号分隔符
+    //   - 规则位置从 list 末尾上移至 BANK_CARD 之前，使 TAX_ID 先入 matches array
+    //     mergeOverlappingValueAware 同范围保留先入 → TAX_ID 优先于 BANK_CARD
+    pattern: /(?:纳税人识别号|纳税识别号|税号|税务登记号|TIN)\s*[:：]?\s*[（(【]?\s*([A-Z0-9]{15,20})\s*[)）】]?/gi,
+    weight: 0.92,
+    description: '纳税人识别号'
+  },
+  {
     type: 'BANK_CARD',
     // v2 修复（spy 设备采购 docx [971-989] FP）：
     //   原 regex `[1-9]\d{4}` 硬性拒绝前导 0，"0413090103000048204" 被截成 "413090103000048204" 18 chars
     //   修法：[0-9]\d{4} 允许任意首位数字
     // v3 修复：支持 19 位银联卡（原 regex 限制 16-18 位）
     //   \d{3,5} → \d{3,6} 允许最后一组 3-6 位（总 16-19 位）
+    //
+    // 规则位置在 TAX_ID 之后：18 位纯数字既是"纳税识别号"又是潜在银行卡时，
+    //   TAX_ID 先入 matches array，merge 同范围保留先入 → TAX_ID 优先
+    //   → "纳税识别号：【913100007397870325】" 正确识别为 TAX_ID（不会被 BANK_CARD 抢匹配）
     pattern: /[0-9]\d{4}[\s]?\d{4}[\s]?\d{4}[\s]?\d{3,6}/g,
     weight: 0.90,
     description: '银行卡号'
@@ -95,19 +117,38 @@ export const BUILTIN_RULES: BuiltinRuleDefinition[] = [
   },
   {
     type: 'COMPANY',
+    // alt A：完整型公司名（标准"X有限公司"等）
     // v2 修复（spy 截图反馈"公司名识别太贪婪"）：
     //   1. 左边界负向后顾 (?<![这那每该各某自己诸何之与和及或其的了在为于而则])
     //      → 防止 "委托北京SAMPLE-CO-E公司"、"这家公司"、"A和B公司" 整段被左贪婪吞
     //   2. body {2,30}（最小 2 字、最多 30 字）→ 防止 "X公司" 单字字号 + 防止超长匹配
-    //   3. 2 路 alt 结构：
-    //      - alt A: 完整型 <region>?<name 2-30><industry>?<form>（标准公司名）
-    //      - alt B: <name 2-8>集团（简称 + 集团，如 "阿里巴巴集团"）
-    //   4. industry 部分常见 16 个行业词 + 0-10 字缓冲（"融媒体科技文化" 这种）
+    //   3. 行业词 16 个 + 0-10 字缓冲（"融媒体科技文化" 这种）
     //
-    // post-filter 在 SensitiveFinder.ts:80 进一步检查 body 内容合法性（介词/代词/长度兜底）
-    pattern: /(?<![这那每该各某自己诸何之与和及或其的了在为于而则])(?<!委托)(?<!代理)(?<!代表)(?:(?:[\u4e00-\u9fa5]{2,8}(?:省|市|自治区))?[\u4e00-\u9fa5（）()]{2,30}(?:[\u4e00-\u9fa5]{0,10}(?:科技|投资|实业|商贸|文化|传媒|网络|信息|电子|建筑|工程|咨询|管理|服务|贸易|发展|控股|融媒体))?(?:集团有限公司|股份有限公司|科技有限公司|投资有限公司|实业有限公司|商贸有限公司|有限公司|分公司|公司)|[\u4e00-\u9fa5]{2,8}集团)/g,
+    // v4 拆分（spy 6 docx audit - 三餐四季 [4996-5008] 等 "X集团...及其关联公司" 回归）：
+    //   - 原 regex `alt A | alt B` 单条 alternation，alt A greedy 抢匹配导致 alt B 没机会
+    //     例 "合作方为阿里巴巴集团及其关联公司"：
+    //       - alt A: 16 chars greedy (body=14 "合作方为阿里巴巴集团及其关联" + form="公司")
+    //         → post-filter 拒（"及其"在 reject chars）
+    //       - alt B 在 same alternation 中没机会跑（first-match-wins）
+    //       → 整段无 match
+    //   - 修法：拆成两条独立 regex pattern（list 内两条 COMPANY 类型 rules）
+    //     SensitiveFinder 按顺序 process，都过 post-filter，最终 mergeOverlappingValueAware 用
+    //     长短逻辑合并。alt B 即使被 alt A 抢位置，自身 process 也能正常 emit
+    pattern: /(?<![这那每该各某自己诸何之与和及或其的了在为于而则])(?<!委托)(?<!代理)(?<!代表)(?:(?:[\u4e00-\u9fa5]{2,8}(?:省|市|自治区))?[\u4e00-\u9fa5（）()]{2,30}(?:[\u4e00-\u9fa5]{0,10}(?:科技|投资|实业|商贸|文化|传媒|网络|信息|电子|建筑|工程|咨询|管理|服务|贸易|发展|控股|融媒体))?(?:集团有限公司|股份有限公司|科技有限公司|投资有限公司|实业有限公司|商贸有限公司|有限公司|分公司|公司))/g,
     weight: 0.88,
-    description: '公司名称'
+    description: '公司名称(完整型)'
+  },
+  {
+    type: 'COMPANY',
+    // alt B：简称 + 集团（如"阿里巴巴集团"）
+    // v4 拆分（见上 alt A 注释）
+    // 副词前缀拒保护（spy 6 docx audit - 三餐四季 [14085-14091] "同时配合集团"）：
+    //   - 纯 post-filter 处理（看 body 前 2-3 字符），不在 regex 里
+    //     单字副词（时/同/也/又/还/但/或/仍/即/仅）会出现在真公司名（"时代集团"/"同方集团"）
+    //     → 必须在 post-filter 用 2-3 字符副词链判定
+    pattern: /(?<![这那每该各某自己诸何之与和及或其的了在为于而则])(?<!委托)(?<!代理)(?<!代表)[\u4e00-\u9fa5]{2,8}集团/g,
+    weight: 0.88,
+    description: '公司名称(集团简称)'
   },
   {
     type: 'NAME',
@@ -115,14 +156,6 @@ export const BUILTIN_RULES: BuiltinRuleDefinition[] = [
     pattern: /(?<=姓名\s*[:：]\s*|名字\s*[:：]\s*|客户姓名\s*[:：]\s*|联系人\s*[:：]\s*)[\u4e00-\u9fa5]{2,4}/g,
     weight: 0.85,
     description: '中文姓名'
-  },
-  {
-    type: 'TAX_ID',
-    // capture group 提取税号本体：[A-Z0-9]{15,20} 是 match[1]
-    // SensitiveFinder.ts:69-72 会用 match[1] 作为 value，这样"纳税人识别号："作为 label 保留不脱敏
-    pattern: /(?:纳税人识别号|税号|税务登记号|TIN)\s*[:：]?\s*([A-Z0-9]{15,20})/gi,
-    weight: 0.92,
-    description: '纳税人识别号'
   }
 ];
 
