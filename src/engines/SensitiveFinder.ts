@@ -74,6 +74,19 @@ export class SensitiveFinder {
         const hasCaptureGroup = match.length > 1 && match[1] !== undefined;
         let value = hasCaptureGroup ? match[1] : match[0];
         const offset = hasCaptureGroup ? match[0].indexOf(match[1]) : 0;
+
+        // BANK_CARD post-filter v2（spy 6 docx audit — 三餐四季 [11088-11107] "4306241990006060034" 19位畸形ID FP）：
+        //   BANK_CARD v3 `\d{3,6}` 让 19 位数字串被识别为银行卡，但其中一部分是畸形 ID_CARD 格式
+        //   （原文档 typo 多了 1 位，ID_CARD regex 因月份不合法匹配失败，导致 BANK_CARD 抢匹配）
+        //   修法：前 10 位匹配 ID_CARD region+year 前缀 → 排除（容忍 typo 位置）
+        //     - 4306241990006060034 (19 chars, region 430624 + year 1990) → 排除 ✅
+        //     - 1001182619000025616 (19 chars, year 2619 前缀 26 不匹配 18|19|20) → 保留 ✅
+        //     - 0413090103000048204 (19 chars, 首字符 0 不匹配 [1-9]) → 保留 ✅
+        //     - 44057601040010545 (17 chars, year 6010 前缀 60 不匹配) → 保留 ✅
+        //   阈值 17：ID_CARD 至少 17 位 prefix 才检查
+        if (rule.type === 'BANK_CARD' && value.length >= 17) {
+          if (/^[1-9]\d{5}(?:18|19|20)\d{2}/.test(value)) continue;
+        }
         let start = match.index + offset;
 
         // COMPANY 排除词 + body 合法性检查（regex 负向后顾 + post-filter 兜底）

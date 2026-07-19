@@ -5,9 +5,13 @@
  *   1. 在 AUDIT_DOCS 数组中追加新 docx { name, path }
  *   2. 跑：npx vitest run src/rules/__tests__/RealDocxFPAudit.test.ts
  *
- * 当前已审计：
+ * 当前已审计（commit d155449 后扩展）：
  *   - zcool-iQOO 著作权转让书（commit b2eb27a/05af7ec/8e9c686 修过）
- *   - SAMPLE-CO-F-设备采购-20240126（用户即时提供，验证 SPLIT 普适性）
+ *   - SAMPLE-CO-F-设备采购-20240126（用户即时提供，验证 SPLIT + AMOUNT_UPPER/BANK_CARD 修复）
+ *   - 中国说唱巅峰对决 后期结算补充协议（真实客户合同，含金额）
+ *   - 三餐四季 节目委托服务协议（"委托" 模式，验证 mid-verb SPLIT 普适性）
+ *   - 京城十二时辰 磋商邀请文件（招投标文档，多方主体）
+ *   - 供应商承诺书（短文档，签名场景）
  */
 import { describe, it } from 'vitest';
 import fs from 'fs';
@@ -25,6 +29,22 @@ const AUDIT_DOCS: AuditDoc[] = [
   {
     name: 'SAMPLE-CO-F-设备采购-20240126',
     path: '<repo-path>/work/SAMPLE-CO-F/交接文件/SAMPLE-CO-K-合同:文件/2024年-岁月:SAMPLE-CO-H/【OA】费用:其他合同/【OA】设备采购合同 -20240126.docx',
+  },
+  {
+    name: '中国说唱巅峰对决-后期结算补充协议',
+    path: '<repo-path>/work/SAMPLE-CO-F/交接文件/SAMPLE-CO-K-合同:文件/2023年-岁月:SAMPLE-CO-H/【OA】节目制作/客户合同/【OA】《中国说唱巅峰对决2023》/【OA】《中国说唱巅峰对决2023》后期结算补充协议-20231115.docx',
+  },
+  {
+    name: '三餐四季-节目委托服务协议',
+    path: '<repo-path>/work/SAMPLE-CO-F/交接文件/SAMPLE-CO-K-合同:文件/2023年-岁月:SAMPLE-CO-H/【OA】节目制作/客户合同/【OA】《三餐四季》节目委托服务协议-中视&SAMPLE-CO-H-20231219.docx',
+  },
+  {
+    name: '京城十二时辰-磋商邀请文件',
+    path: '<repo-path>/work/SAMPLE-CO-F/交接文件/SAMPLE-CO-K-合同:文件/2023年-岁月:SAMPLE-CO-H/其他盖章文件/招投标文件/京城十二时辰/《京城十二时辰》第三季后期制作服务磋商邀请文件.docx',
+  },
+  {
+    name: '供应商承诺书',
+    path: '<repo-path>/work/SAMPLE-CO-F/交接文件/SAMPLE-CO-K-合同:文件/2023年-岁月:SAMPLE-CO-H/其他盖章文件/供应商承诺书.docx',
   },
 ];
 

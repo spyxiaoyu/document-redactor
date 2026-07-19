@@ -306,4 +306,92 @@ describe('AMOUNT_UPPER + BANK_CARD 大括号/前导 0 bug 修复', () => {
       expect(matches.some(m => m === '44057601040010545')).toBe(true);
     });
   });
+
+  /**
+   * 第三轮修复（spy 6 docx audit 暴露 — 2026-07-19）：
+   *   - AMOUNT_UPPER 残缺匹配：京城十二时辰 [538-540] "180万元" 只 match "万元" 2 chars
+   *     修法：regex 加 Arabic digit 前缀 alternation `\d+(?:,\d{3})*(?:\.\d+)?[万亿]元?`
+   *   - BANK_CARD 误匹配畸形 ID：v3 \d{3,6} 让 19 位畸形 ID 卡（如 "4306241990006060034"）也被识别为银行卡
+   *     修法：post-filter 排除 ID_CARD 格式（18-19 位 + region + 19/20 年份前缀）
+   *
+   * probe 测试必须用 SensitiveFinder 真实 API（regex + post-filter 联动）
+   */
+  describe('AMOUNT_UPPER 阿拉伯数字前缀 + BANK_CARD 排除畸形 ID', () => {
+    describe('AMOUNT_UPPER 阿拉伯数字前缀应完整匹配', () => {
+      it('case C1: "人民币180万元" → 应匹配 "人民币180万元"（含前缀）', () => {
+        // 京城十二时辰 [538-540] bug：之前只 match "万元"
+        // v5 修法：Arabic digit alternation + (?:人民币)? prefix 完整捕获
+        const text = '预算控制金额为人民币180万元';
+        const matches = findByType(text, 'AMOUNT_UPPER');
+        console.log(`\n[case C1] 输入: "${text}" → 匹配: ${JSON.stringify(matches)}`);
+        // 接受 2 种形式：含/不含 人民币 前缀
+        expect(matches.some(m => m === '180万元' || m === '人民币180万元')).toBe(true);
+        // 不应只残缺匹配 "万元"
+        expect(matches.some(m => m === '万元')).toBe(false);
+      });
+
+      it('case C2: "180万元整" → 应匹配 "180万元整" 6 chars', () => {
+        const text = '总价180万元整';
+        const matches = findByType(text, 'AMOUNT_UPPER');
+        console.log(`\n[case C2] 输入: "${text}" → 匹配: ${JSON.stringify(matches)}`);
+        expect(matches.some(m => m === '180万元整')).toBe(true);
+      });
+
+      it('case C3: "180万"（无"元"）也应匹配', () => {
+        const text = '总投资180万';
+        const matches = findByType(text, 'AMOUNT_UPPER');
+        console.log(`\n[case C3] 输入: "${text}" → 匹配: ${JSON.stringify(matches)}`);
+        expect(matches.some(m => m === '180万')).toBe(true);
+      });
+
+      it('case C4: "1.5万元"（小数）也应匹配', () => {
+        const text = '预算1.5万元';
+        const matches = findByType(text, 'AMOUNT_UPPER');
+        console.log(`\n[case C4] 输入: "${text}" → 匹配: ${JSON.stringify(matches)}`);
+        expect(matches.some(m => m === '1.5万元')).toBe(true);
+      });
+
+      it('case C5: 现有汉字金额不应回归', () => {
+        const text = '总计贰佰柒拾肆万肆仟叁佰零陆元';
+        const matches = findByType(text, 'AMOUNT_UPPER');
+        console.log(`\n[case C5] 输入: "${text}" → 匹配: ${JSON.stringify(matches)}`);
+        expect(matches.some(m => m === '贰佰柒拾肆万肆仟叁佰零陆元')).toBe(true);
+      });
+    });
+
+    describe('BANK_CARD 应排除畸形 19 位 ID 卡格式', () => {
+      it('case D1: 19 位畸形 ID "4306241990006060034" → 不应被识别为 BANK_CARD', () => {
+        // 三餐四季 [11088-11107] bug：v3 \d{3,6} 让 19 位 ID 也被匹配为银行卡
+        // 修法：post-filter 排除 ID_CARD 格式（region(6) + 19|20 年份(4) + ...）
+        const text = '主力编剧 朱星杰 男 4306241990006060034';
+        const matches = findByType(text, 'BANK_CARD');
+        console.log(`\n[case D1] 输入: "${text}" → 匹配: ${JSON.stringify(matches)}`);
+        expect(matches.some(m => m === '4306241990006060034')).toBe(false);
+      });
+
+      it('case D2: 19 位真银行卡 "1001182619000025616" 不应回归', () => {
+        // 三餐四季 [5061-5080] 已 pass: 19 位银联卡
+        const text = '开户账号：1001182619000025616';
+        const matches = findByType(text, 'BANK_CARD');
+        console.log(`\n[case D2] 输入: "${text}" → 匹配: ${JSON.stringify(matches)}`);
+        expect(matches.some(m => m === '1001182619000025616')).toBe(true);
+      });
+
+      it('case D3: 19 位前导 0 银行卡 "0413090103000048204" 不应回归', () => {
+        // 设备采购 [971-989] 已 pass
+        const text = '账户：0413090103000048204';
+        const matches = findByType(text, 'BANK_CARD');
+        console.log(`\n[case D3] 输入: "${text}" → 匹配: ${JSON.stringify(matches)}`);
+        expect(matches.some(m => m === '0413090103000048204')).toBe(true);
+      });
+
+      it('case D4: 18 位 ID_CARD 数字串也不应被误吃', () => {
+        // 类似 ID_CARD 格式（region 6 + 19XX 年）的 18 位数字串不应被 BANK_CARD 吃
+        const text = '员工编号 110101199003078811';
+        const matches = findByType(text, 'BANK_CARD');
+        console.log(`\n[case D4] 输入: "${text}" → 匹配: ${JSON.stringify(matches)}`);
+        expect(matches.some(m => m === '110101199003078811')).toBe(false);
+      });
+    });
+  });
 });
