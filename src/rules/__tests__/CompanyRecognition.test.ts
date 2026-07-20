@@ -662,5 +662,82 @@ describe('AMOUNT_UPPER + BANK_CARD 大括号/前导 0 bug 修复', () => {
         expect(matches).toContain('北京饼干科技有限公司');
       });
     });
+
+    describe('有关事项说明(资产评估报告) audit — 叙述前缀/纯form/右括号 FP 修复', () => {
+      // 资产评估报告叙述密集，暴露 3 类 FP + 1 陷阱：
+      //   陷阱：body 含"评估"的是真公司（"北京坤元至诚资产评估有限公司"）→ "评估"不能进动词表
+      it('case 45: "本次评估对象为SAMPLE-CO-F（海南）融媒体科技有限公司" → 叙述前缀不识别', () => {
+        const text = '本次评估对象为SAMPLE-CO-F（海南）融媒体科技有限公司';
+        const matches = findCompany(text);
+        console.log(`\n[case 45] 输入: "${text}" → 匹配: ${JSON.stringify(matches)}`);
+        expect(matches.some(m => m.includes('本次') || m.includes('对象'))).toBe(false);
+      });
+
+      it('case 46: "有限责任公司" → 纯 form 词无字号，应拒', () => {
+        const text = '本公司为有限责任公司性质';
+        const matches = findCompany(text);
+        console.log(`\n[case 46] 输入: "${text}" → 匹配: ${JSON.stringify(matches)}`);
+        expect(matches).not.toContain('有限责任公司');
+        expect(matches).not.toContain('本公司为有限责任公司');
+        expect(matches.some(m => m.includes('本公司为'))).toBe(false);
+      });
+
+      it('case 47: "）子公司SAMPLE-CO-H（上海）文化科技有限公司" → 切右括号+子公司前缀', () => {
+        const text = '）子公司SAMPLE-CO-H（上海）文化科技有限公司';
+        const matches = findCompany(text);
+        console.log(`\n[case 47] 输入: "${text}" → 匹配: ${JSON.stringify(matches)}`);
+        expect(matches.some(m => m.startsWith('）') || m.startsWith('子公司'))).toBe(false);
+        expect(matches).toContain('SAMPLE-CO-H（上海）文化科技有限公司');
+      });
+
+      it('case 48: "现邀请贵公司参与" → 邀请指代不识别', () => {
+        const text = '现邀请贵公司参与本次磋商';
+        const matches = findCompany(text);
+        console.log(`\n[case 48] 输入: "${text}" → 匹配: ${JSON.stringify(matches)}`);
+        expect(matches.some(m => m.includes('邀请') || m.includes('贵公司'))).toBe(false);
+      });
+
+      it('case 49 (regression 陷阱): "北京坤元至诚资产评估有限公司" → 评估公司必须保留', () => {
+        const text = '受托方：北京坤元至诚资产评估有限公司';
+        const matches = findCompany(text);
+        console.log(`\n[case 49] 输入: "${text}" → 匹配: ${JSON.stringify(matches)}`);
+        expect(matches).toContain('北京坤元至诚资产评估有限公司');
+      });
+
+      it('case 50: "申报的含分摊并购北京SAMPLE-CO-K文化传播有限公司" → 叙述前缀不识别', () => {
+        const text = '申报的含分摊并购北京SAMPLE-CO-K文化传播有限公司';
+        const matches = findCompany(text);
+        console.log(`\n[case 50] 输入: "${text}" → 匹配: ${JSON.stringify(matches)}`);
+        expect(matches.some(m => m.includes('申报') || m.includes('并购'))).toBe(false);
+      });
+
+      it('case 51: 纯 form "有限责任公司"（无字号）→ 应拒', () => {
+        const text = '企业性质：有限责任公司。';
+        const matches = findCompany(text);
+        console.log(`\n[case 51] 输入: "${text}" → 匹配: ${JSON.stringify(matches)}`);
+        expect(matches).not.toContain('有限责任公司');
+      });
+
+      it('case 52: "同意原股东千秋岁（海南）文化传播有限公司" → 切叙述前缀', () => {
+        const text = '同意原股东千秋岁（海南）文化传播有限公司';
+        const matches = findCompany(text);
+        console.log(`\n[case 52] 输入: "${text}" → 匹配: ${JSON.stringify(matches)}`);
+        expect(matches.some(m => m.includes('同意') || m.includes('原股东'))).toBe(false);
+      });
+
+      it('case 53: "评估范围为SAMPLE-CO-F（海南）融媒体科技有限公司" → 切叙述前缀（评估公司不误杀）', () => {
+        const text = '评估范围为SAMPLE-CO-F（海南）融媒体科技有限公司';
+        const matches = findCompany(text);
+        console.log(`\n[case 53] 输入: "${text}" → 匹配: ${JSON.stringify(matches)}`);
+        expect(matches.some(m => m.includes('范围'))).toBe(false);
+      });
+
+      it('case 54: "政府补助为SAMPLE-CO-H（上海）文化科技有限公司" → 切叙述前缀', () => {
+        const text = '政府补助为SAMPLE-CO-H（上海）文化科技有限公司';
+        const matches = findCompany(text);
+        console.log(`\n[case 54] 输入: "${text}" → 匹配: ${JSON.stringify(matches)}`);
+        expect(matches.some(m => m.includes('补助') || m.includes('政府'))).toBe(false);
+      });
+    });
   });
 });

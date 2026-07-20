@@ -116,6 +116,46 @@ const AUDIT_DOCS: AuditDoc[] = [
     name: '唐宋八大家-50万剪辑合同-青年王国',
     path: '<repo-path>/work/SAMPLE-CO-F/交接文件/SAMPLE-CO-K-合同:文件/2023年-岁月:SAMPLE-CO-H/【OA】节目制作/供应商合同/【OA】《唐宋八大家》50万剪辑合同 -青年王国.docx',
   },
+  {
+    // 2026-07-20 spy 第三批：招投标磋商邀请文件（多主体，最美中轴线第三季）
+    name: '最美中轴线第三季-磋商邀请文件',
+    path: '<repo-path>/work/SAMPLE-CO-F/交接文件/SAMPLE-CO-K-合同:文件/2023年-岁月:SAMPLE-CO-H/其他盖章文件/招投标文件/最美中轴线第三季/《最美中轴线》第三季后期制作服务磋商邀请文件.docx',
+  },
+  {
+    // 2026-07-20 spy 第三批：资产评估说明类（有关事项说明）
+    name: '有关事项说明6.1V2',
+    path: '<repo-path>/work/SAMPLE-CO-F/交接文件/SAMPLE-CO-K-合同:文件/2023年-岁月:SAMPLE-CO-H/其他盖章文件/岁月资产评估资料/SAMPLE-CO-K-打印资料2/0附件资料/3有关事项说明6.1V2.docx',
+  },
+  {
+    // 2026-07-20 spy 第三批：情况说明类（文创证明）
+    name: '情况说明-文创证明',
+    path: '<repo-path>/work/SAMPLE-CO-F/交接文件/SAMPLE-CO-K-合同:文件/2023年-岁月:SAMPLE-CO-H/其他盖章文件/配合海淀科技提供资料清单/1. 情况说明（文创证明并提供合同、发票等证明材料）.docx',
+  },
+  {
+    // 2026-07-20 spy 第三批：声明模板类（不涉及前置审批声明）
+    name: '不涉及前置审批的声明模板',
+    path: '<repo-path>/work/SAMPLE-CO-F/交接文件/SAMPLE-CO-K-合同:文件/2023年-岁月:SAMPLE-CO-H/其他盖章文件/【OA】朝阳区产业政策补贴申请材料/附件4 不涉及前置审批的声明模板（2023）.docx',
+  },
+  {
+    // 2026-07-20 spy 第三批：纯费用明细附件（中国中医药大会）
+    name: '中国中医药大会-费用明细后期包装',
+    path: '<repo-path>/work/SAMPLE-CO-F/交接文件/SAMPLE-CO-K-合同:文件/2023年-岁月:SAMPLE-CO-H/【OA】节目制作/客户合同/【OA】《中国中医药大会》/【OA】附件一：费用明细-后期、包装.docx',
+  },
+  {
+    // 2026-07-20 spy 第三批：供应商剪辑合同（全力以赴 85万）
+    name: '全力以赴行动派第二季-85万剪辑合同',
+    path: '<repo-path>/work/SAMPLE-CO-F/交接文件/SAMPLE-CO-K-合同:文件/2023年-岁月:SAMPLE-CO-H/【OA】节目制作/供应商合同/【OA】《全力以赴行动派第二季 》85万剪辑合同.docx',
+  },
+  {
+    // 2026-07-20 spy 第三批：供应商摄像委托（星光大道 27.3万）
+    name: '星光大道-摄像委托服务协议',
+    path: '<repo-path>/work/SAMPLE-CO-F/交接文件/SAMPLE-CO-K-合同:文件/2023年-岁月:SAMPLE-CO-H/【OA】节目制作/供应商合同/【OA】《星光大道》摄像委托服务协议-27.3万.docx',
+  },
+  {
+    // 2026-07-20 spy 第三批：委托制作合同（非遗贵州篇）
+    name: '非遗贵州篇-委托制作合同',
+    path: '<repo-path>/work/SAMPLE-CO-F/交接文件/SAMPLE-CO-K-合同:文件/2023年-岁月:SAMPLE-CO-H/【OA】节目制作/客户合同/【OA】非遗贵州篇—委托制作合同—SAMPLE-CO-K20231204.docx',
+  },
 ];
 
 function toArrayBuffer(buf: Uint8Array): ArrayBuffer {
