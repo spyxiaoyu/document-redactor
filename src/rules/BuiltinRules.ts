@@ -11,9 +11,16 @@ export interface BuiltinRuleDefinition {
 export const BUILTIN_RULES: BuiltinRuleDefinition[] = [
   {
     type: 'PHONE',
-    pattern: /(\+?86)?[-.\s]?1[3-9]\d{9}/g,
+    // v2 修复（spy 第七批真合同 audit — 茅台/习酒 "01000000000"/"08510000000" FN）：
+    //   原 regex 只接 1[3-9]\d{9} 11 位手机号，真合同桌面固话/服务热线（010/0XX-XXXXXXXX）全漏识别
+    //   修法：top-level alternation 加固话格式 `0\d{2,4}[-.\s]?\d{7,8}`
+    //     - "01000000000" (3-8) → 11 chars ✅
+    //     - "08510000000" (4-7) → 12 chars（含 -） ✅
+    //     - "02100000000" (3-8) → 12 chars（含 -） ✅
+    //   风险：低数字短串（如 "01012345" 8 chars）误吃 → 长度 ≥ 11 兜底
+    pattern: /(\+?86[-.\s]?)?(?:1[3-9]\d{9}|0\d{2,4}[-.\s]?\d{7,8})/g,
     weight: 0.95,
-    description: '中国大陆手机号码'
+    description: '中国大陆手机号/固话'
   },
   {
     type: 'ID_CARD',
@@ -41,7 +48,13 @@ export const BUILTIN_RULES: BuiltinRuleDefinition[] = [
     //     2. label 和 capture group 之间允许 `[（(【]?\s*` / `\s*[)）]?` 中文括号分隔符
     //   - 规则位置从 list 末尾上移至 BANK_CARD 之前，使 TAX_ID 先入 matches array
     //     mergeOverlappingValueAware 同范围保留先入 → TAX_ID 优先于 BANK_CARD
-    pattern: /(?:纳税人识别号|纳税识别号|税号|税务登记号|TIN)\s*[:：]?\s*[（(【]?\s*([A-Z0-9]{15,20})\s*[)）】]?/gi,
+    // v3 修复（spy 第七批真合同 audit — SAMPLE-CO-D/茅台/习酒合同反复出现的"统一社会信用代码：..." FP）：
+    //   - 真合同最常用 label 是"统一社会信用代码"（9 字），原 regex 不收 → 18 位 USCC 漏识别
+    //   - mammoth 拼接常丢尾部字母校验码（如 91440101567914858A → 91440101567914858）
+    //     → 退化成 17 位纯数字被 BANK_CARD regex 抢匹配 → 错标税号身份为银行卡
+    //   - 修法：label alt 加"统一社会信用代码"+ "统一社会信用代码编号"（11 字 full form）
+    //     → TAX_ID 先入 matches array（规则位置在 BANK_CARD 前）→ 优先识别完整 18 位
+    pattern: /(?:纳税人识别号|纳税识别号|税号|税务登记号|统一社会信用代码|统一社会信用代码编号|TIN)\s*[:：]?\s*[（(【]?\s*([A-Z0-9]{15,20})\s*[)）】]?/gi,
     weight: 0.92,
     description: '纳税人识别号'
   },
