@@ -539,5 +539,80 @@ describe('AMOUNT_UPPER + BANK_CARD 大括号/前导 0 bug 修复', () => {
         expect(banks.some(m => m.value === '1234567812345678')).toBe(true);
       });
     });
+
+    /**
+     * 第四轮修复（spy SAMPLE-CO-J Pre-A 增资协议 audit — 22 个 COMPANY FP）：
+     *   暴露大量叙述性短语被误识别为 COMPANY：
+     *     - "青山资本应向公司" / "剩余款项计入公司" / "由正涵投资向公司"
+     *     - "维持集团公司" / "影响集团公司" / "保证方承诺集团公司"
+     *     - "的股权系为公司" / "酪神星球实际为公司的全资子公司"
+     *     - "并应办理股权变更登记以使得酪神星球变更为公司的全资子公司" 28 chars
+     *     - "制订或修改集团公司" / "聘任或解聘公司"
+     *   根因：COMPANY regex body 字符类 `[\u4e00-\u9fa5（）()]{2,30}` 无动作动词/介词终止符
+     *   真公司名 body 是静态名词（地点+品牌+行业词"科技/投资/实业"+公司形态"发展/控股/管理"）
+     *   FP body 含动态动作词（"应向"/"办理"/"经营"/"承诺"/"损害"/"制订" 等合同动作动词）
+     *   修法：post-filter 加 action verb trigger list，命中即拒
+     *   注意：避免误伤静态词（如"代理" — "智能代理有限公司" case 22）
+     *   probe 测试 case 24-31（先 red 复现，再 green 验证修法）
+     */
+    describe('酪神_Pre-A_增资协议 audit FP 修复（合同动作动词 body 拒）', () => {
+      it('case 24: "青山资本应向公司" → 合同动作动词触发，应拒', () => {
+        const text = '青山资本应向公司支付剩余投资款';
+        const matches = findCompany(text);
+        console.log(`\n[case 24] 输入: "${text}" → 匹配: ${JSON.stringify(matches)}`);
+        expect(matches.some(m => m.includes('青山资本应向公司'))).toBe(false);
+      });
+
+      it('case 25: "维持集团公司" → 动作动词 "维持" 触发，应拒', () => {
+        const text = '创始股东应当维持集团公司的正常运营';
+        const matches = findCompany(text);
+        console.log(`\n[case 25] 输入: "${text}" → 匹配: ${JSON.stringify(matches)}`);
+        expect(matches.some(m => m.includes('维持集团'))).toBe(false);
+      });
+
+      it('case 26: "的股权系为公司" → 系动词 "系为" 触发，应拒', () => {
+        const text = '保证方持有的股权系为公司所有';
+        const matches = findCompany(text);
+        console.log(`\n[case 26] 输入: "${text}" → 匹配: ${JSON.stringify(matches)}`);
+        expect(matches.some(m => m.includes('系为'))).toBe(false);
+      });
+
+      it('case 27: 长复合动词链 "并应办理股权变更登记以使得酪神星球变更为公司的全资子公司" → 应拒', () => {
+        const text = '并应办理股权变更登记以使得酪神星球变更为公司的全资子公司';
+        const matches = findCompany(text);
+        console.log(`\n[case 27] 输入: "${text.length}字" → 匹配: ${JSON.stringify(matches)}`);
+        expect(matches.some(m => m.includes('并应办理'))).toBe(false);
+      });
+
+      it('case 28: "投资者已经完成对集团公司" → 复合动词 "已经完成" 触发，应拒', () => {
+        const text = '投资者已经完成对集团公司的增资交割';
+        const matches = findCompany(text);
+        console.log(`\n[case 28] 输入: "${text}" → 匹配: ${JSON.stringify(matches)}`);
+        expect(matches.some(m => m.includes('已经完成'))).toBe(false);
+      });
+
+      it('case 29: "约定以书面形式向上海示例企业管理咨询有限公司" → cuttablePrefix 切后保留真简称', () => {
+        // case 24 的 cuttablePrefix 版：含 "以书面形式向" coverb 链
+        // prefix-cut 后剩 "上海示例企业管理咨询有限公司" — 真简称应保留
+        const text = '约定以书面形式向上海示例企业管理咨询有限公司';
+        const matches = findCompany(text);
+        console.log(`\n[case 29] 输入: "${text}" → 匹配: ${JSON.stringify(matches)}`);
+        expect(matches).toContain('上海示例企业管理咨询有限公司');
+      });
+
+      it('case 30 (regression): "上海SAMPLE-CO-J健康科技发展有限公司" → 真简称应保留', () => {
+        const text = '甲方为上海SAMPLE-CO-J健康科技发展有限公司';
+        const matches = findCompany(text);
+        console.log(`\n[case 30] 输入: "${text}" → 匹配: ${JSON.stringify(matches)}`);
+        expect(matches).toContain('上海SAMPLE-CO-J健康科技发展有限公司');
+      });
+
+      it('case 31 (regression): "示例乳业集团有限公司" → 真简称应保留', () => {
+        const text = '投资方为示例乳业集团有限公司';
+        const matches = findCompany(text);
+        console.log(`\n[case 31] 输入: "${text}" → 匹配: ${JSON.stringify(matches)}`);
+        expect(matches).toContain('示例乳业集团有限公司');
+      });
+    });
   });
 });

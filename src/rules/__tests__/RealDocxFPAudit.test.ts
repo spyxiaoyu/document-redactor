@@ -46,6 +46,16 @@ const AUDIT_DOCS: AuditDoc[] = [
     name: '供应商承诺书',
     path: '<repo-path>/work/SAMPLE-CO-F/交接文件/SAMPLE-CO-K-合同:文件/2023年-岁月:SAMPLE-CO-H/其他盖章文件/供应商承诺书.docx',
   },
+  {
+    // spy 2026-07-19 提供：投融资类（增资协议）— 验证股份/估值/投资金额/股东/章程引用场景
+    name: 'SAMPLE-CO-J_Pre-A_增资协议_Final',
+    path: '<repo-path>/work/SAMPLE-CO-F/交接文件/SAMPLE-CO-F-合同:文件/5、SAMPLE-CO-F-投融资/投资-SAMPLE-CO-J/2023年/【OA】酪神_Pre-A轮交易文件及交割文件_Final/交易文件/1. SAMPLE-CO-J_增资协议_Final.docx',
+  },
+  {
+    // spy 2026-07-19 提供：投融资类（公司章程）— 验证股东信息/股权结构/出资额场景
+    name: 'SAMPLE-CO-J_公司章程_Final',
+    path: '<repo-path>/work/SAMPLE-CO-F/交接文件/SAMPLE-CO-F-合同:文件/5、SAMPLE-CO-F-投融资/投资-SAMPLE-CO-J/2023年/【OA】酪神_Pre-A轮交易文件及交割文件_Final/交易文件/3. SAMPLE-CO-J_公司章程_Final.docx',
+  },
 ];
 
 function toArrayBuffer(buf: Uint8Array): ArrayBuffer {
