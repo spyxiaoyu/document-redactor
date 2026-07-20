@@ -642,5 +642,25 @@ describe('AMOUNT_UPPER + BANK_CARD 大括号/前导 0 bug 修复', () => {
         expect(matches).toContain('中国建设银行股份有限公司');
       });
     });
+
+    describe('产权承诺函 audit — 连词"因"前缀误吞 FP 修复', () => {
+      // 根因：原文 "因SAMPLE-CO-F（海南）融媒体科技有限公司编制财务报告需要..."
+      //   "因"是连词（因…需要…），被吞进 COMPANY body 开头 → 假公司名 "因SAMPLE-CO-F（海南）融媒体科技有限公司"
+      // 修法：cuttablePrefix 加单字连词 "因"（与现有 "经" 同类），切后 emit 真公司名
+      it('case 43: "因SAMPLE-CO-F（海南）融媒体科技有限公司编制..." → 切"因"保留真公司名', () => {
+        const text = '因SAMPLE-CO-F（海南）融媒体科技有限公司编制财务报告需要拟对其并购';
+        const matches = findCompany(text);
+        console.log(`\n[case 43] 输入: "${text}" → 匹配: ${JSON.stringify(matches)}`);
+        expect(matches.some(m => m.startsWith('因'))).toBe(false);
+        expect(matches).toContain('SAMPLE-CO-F（海南）融媒体科技有限公司');
+      });
+
+      it('case 44 (regression): "北京饼干科技有限公司" → 不以因开头的真公司不受影响', () => {
+        const text = '甲方：北京饼干科技有限公司';
+        const matches = findCompany(text);
+        console.log(`\n[case 44] 输入: "${text}" → 匹配: ${JSON.stringify(matches)}`);
+        expect(matches).toContain('北京饼干科技有限公司');
+      });
+    });
   });
 });

@@ -76,6 +76,46 @@ const AUDIT_DOCS: AuditDoc[] = [
     name: '2022示例尖叫之夜-后期制作合同',
     path: '<repo-path>/work/SAMPLE-CO-F/交接文件/SAMPLE-CO-K-合同:文件/2023年-岁月:SAMPLE-CO-H/【OA】节目制作/客户合同/【OA】《2022示例尖叫之夜》后期制作合同-千秋岁.docx',
   },
+  {
+    // 2026-07-20 spy 第二批扩展：前期策划服务合同（大写金额 150万）
+    name: '宗师列传唐宋八大家-前期策划服务合同',
+    path: '<repo-path>/work/SAMPLE-CO-F/交接文件/SAMPLE-CO-K-合同:文件/2023年-岁月:SAMPLE-CO-H/【OA】节目制作/客户合同/【OA】《宗师列传之唐宋八大家》前期策划服务合同150万元-花里慧智&SAMPLE-CO-H-20231227.docx',
+  },
+  {
+    // 2026-07-20 spy 第二批：影视化编剧策划服务合同（大金额 464.98万，未签署）
+    name: '宗师列传唐宋八大家-影视化编剧策划服务合同',
+    path: '<repo-path>/work/SAMPLE-CO-F/交接文件/SAMPLE-CO-K-合同:文件/2023年-岁月:SAMPLE-CO-H/【OA】节目制作/客户合同/【OA】《宗师列传·唐宋八大家》影视化编剧策划服务合同464.98万元-花里慧智&SAMPLE-CO-H【未签署】.docx',
+  },
+  {
+    // 2026-07-20 spy 第二批：网络春晚后期制作合同
+    name: '23年网络春晚-节目后期制作合同',
+    path: '<repo-path>/work/SAMPLE-CO-F/交接文件/SAMPLE-CO-K-合同:文件/2023年-岁月:SAMPLE-CO-H/【OA】节目制作/客户合同/【OA】《23年网络春晚》节目后期制作合同.docx',
+  },
+  {
+    // 2026-07-20 spy 第二批：百度客户（元宇宙之夜）
+    name: '百度沸点元宇宙之夜-后期制作合同',
+    path: '<repo-path>/work/SAMPLE-CO-F/交接文件/SAMPLE-CO-K-合同:文件/2023年-岁月:SAMPLE-CO-H/【OA】节目制作/客户合同/【OA】《百度沸点元宇宙之夜》后期制作合同（V1.0）.docx',
+  },
+  {
+    // 2026-07-20 spy 第二批：抖音短视频（车澈）
+    name: '短视频后期制作服务合同-车澈抖音',
+    path: '<repo-path>/work/SAMPLE-CO-F/交接文件/SAMPLE-CO-K-合同:文件/2023年-岁月:SAMPLE-CO-H/【OA】节目制作/客户合同/【OA】短视频后期制作服务合同-车澈抖音/【230906】短视频后期制作服务合同-SAMPLE-CO-H（V3.0）.docx',
+  },
+  {
+    // 2026-07-20 spy 第二批：蚂蚁客户（燃烧吧天才程序员）
+    name: '蚂蚁燃烧吧天才程序员-视频制作及宣传推广服务合同',
+    path: '<repo-path>/work/SAMPLE-CO-F/交接文件/SAMPLE-CO-K-合同:文件/2023年-岁月:SAMPLE-CO-H/【OA】节目制作/客户合同/【OA】蚂蚁《燃烧吧天才程序员》后期制作/视频制作及宣传推广服务合同-对战赛后期制作.docx',
+  },
+  {
+    // 2026-07-20 spy 第二批：承诺函类（产权持有人承诺函）
+    name: '产权持有人承诺函-SAMPLE-CO-K',
+    path: '<repo-path>/work/SAMPLE-CO-F/交接文件/SAMPLE-CO-K-合同:文件/2023年-岁月:SAMPLE-CO-H/其他盖章文件/岁月资产评估资料/SAMPLE-CO-K-打印资料2/0附件资料/附件3产权持有人承诺函-SAMPLE-CO-K（公章、法人签章、空着日期）.docx',
+  },
+  {
+    // 2026-07-20 spy 第二批：供应商剪辑合同（唐宋八大家 50万 青年王国）
+    name: '唐宋八大家-50万剪辑合同-青年王国',
+    path: '<repo-path>/work/SAMPLE-CO-F/交接文件/SAMPLE-CO-K-合同:文件/2023年-岁月:SAMPLE-CO-H/【OA】节目制作/供应商合同/【OA】《唐宋八大家》50万剪辑合同 -青年王国.docx',
+  },
 ];
 
 function toArrayBuffer(buf: Uint8Array): ArrayBuffer {
