@@ -184,4 +184,63 @@ describe('第七批 spy 真合同 audit — 4 类 bug probe（RED 先行）', ()
       expect(companies.length).toBeGreaterThan(0);  // 至少识别一个
     });
   });
+
+  // ==================== P4 BANK_CARD 暗礁：URL 路径 / 软件序列号 / 17 位 USCC ====================
+  describe('P4 BANK_CARD 真合同 3 类暗礁（URL/序列号/17位USCC）', () => {
+    it('case P4-1: csdn 文章 URL 路径末段不应识别为 BANK_CARD', () => {
+      // 金蝶开发运维合同尾部"金蝶云社区链接"
+      const text = '更多信息请访问 club.kdcloud.com/article/153835620237019392 第 6 页 共 6 页';
+      const finder = buildFinder();
+      const result = finder.findSensitiveContent(text);
+      const banks = result.matches.filter(m => m.type === 'BANK_CARD').map(m => m.value);
+      console.log(`\n[case P4-1] banks=${JSON.stringify(banks)}`);
+      expect(banks).not.toContain('153835620237019392');
+    });
+
+    it('case P4-2: 金蝶软件序列号（括号包裹）不应识别为 BANK_CARD', () => {
+      // 金蝶开发运维合同"金蝶云·星空旗舰版（1423029347329064960）"
+      const text = '金蝶云·星空旗舰版（1423029347329064960）';
+      const finder = buildFinder();
+      const result = finder.findSensitiveContent(text);
+      const banks = result.matches.filter(m => m.type === 'BANK_CARD').map(m => m.value);
+      console.log(`\n[case P4-2] banks=${JSON.stringify(banks)}`);
+      expect(banks).not.toContain('1423029347329064960');
+    });
+
+    it('case P4-3: 17 位纯数字 USCC（mammoth 拼丢尾部字母 + 无 label）不应识别为 BANK_CARD', () => {
+      // SAMPLE-CO-D合同"统一社会信用代码：91440101567914858A" 尾部 A 丢了 → 17 位纯数字
+      // 关键场景：USCC 出现在无 label 上下文（mammoth 拼接丢标签）+ 17 位数字
+      // 不能依赖 TAX_ID 抢匹配 — TAX_ID 必须有 label 才匹配；纯数字 17 位应被 BANK_CARD post-filter 直接拒
+      const text = '甲方开户：91440101567914858 乙方开户：某支行 0200025609200013713';
+      const finder = buildFinder();
+      const result = finder.findSensitiveContent(text);
+      const banks = result.matches.filter(m => m.type === 'BANK_CARD').map(m => m.value);
+      console.log(`\n[case P4-3] banks=${JSON.stringify(banks)}`);
+      // USCC 形态（91/92/93 开头 + 17 位纯数字）应拒
+      expect(banks).not.toContain('91440101567914858');
+      // 真卡号（02 开头 19 位）应保留
+      expect(banks).toContain('0200025609200013713');
+    });
+
+    it('case P4-4 (回归): 真实银行账号 19 位应保留', () => {
+      // 习酒合同"银行账号：23380001040000208" 是 17 位农业银行内部分行短账号（真）
+      // 这里验证：post-filter 不应误伤所有 17 位数字 — 只针对 USCC 形态（91/92/93 开头且 ≤18 位）
+      const text = '中国农业银行股份有限公司习水二郎庙支行 银行账号：23380001040000208';
+      const finder = buildFinder();
+      const result = finder.findSensitiveContent(text);
+      const banks = result.matches.filter(m => m.type === 'BANK_CARD').map(m => m.value);
+      console.log(`\n[case P4-4] banks=${JSON.stringify(banks)}`);
+      // 17 位 9[123] 开头才拒；2338 不以 9 开头 → 保留（真农业银行短账号）
+      expect(banks).toContain('23380001040000208');
+    });
+
+    it('case P4-5 (回归): 真实工行账号 19 位 + label 应保留', () => {
+      const text = '工商银行马甸支行 账号：0200025609200013713';
+      const finder = buildFinder();
+      const result = finder.findSensitiveContent(text);
+      const banks = result.matches.filter(m => m.type === 'BANK_CARD').map(m => m.value);
+      console.log(`\n[case P4-5] banks=${JSON.stringify(banks)}`);
+      expect(banks).toContain('0200025609200013713');
+    });
+  });
 });

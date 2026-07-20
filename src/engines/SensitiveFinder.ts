@@ -97,11 +97,33 @@ export class SensitiveFinder {
         //     - 16 位 + 换行/空格 → 真卡号 → 保留 ✅
         if (rule.type === 'BANK_CARD') {
           if (value.length >= 17 && /^[1-9]\d{5}(?:18|19|20)\d{2}/.test(value)) continue;
-          // 18 位纯数字 统一社会信用代码 FP（第六批 audit — 代销协议 "911101065976768466"）：
-          //   USCC 18 位 = 登记管理部门代码"9"(工商) + 机构类别"1/2/3"(企业/个体/合作社) + 行政区划码 + 主体码 + 校验码
-          //   docx mammoth 拼接常丢尾部字母校验码（如真值 91110106597676846C）→ 退化成 18 位纯数字被 BANK_CARD 误吃
-          //   银行卡 BIN 不以 91/92/93 开头（银联 62 / Visa 4 / MC 5）→ 安全区分，不误伤真卡
-          if (value.length === 18 && /^9[123]/.test(value)) continue;
+          // 17-19 位纯数字 统一社会信用代码 FP（第七批真合同 audit — SAMPLE-CO-D mammoth 拼丢尾部字母）：
+          //   USCC 18 位 = 工商代码"9" + 机构类别"1/2/3" + 行政区划码 + 主体码 + 字母校验码
+          //   mammoth 拼接常丢尾部字母校验码（真值 91440101567914858A → 17 位 91440101567914858）
+          //   即使哺乳到 19 位 / 若 USCC 字母在更后位置 → 也可能被误吃
+          //   银行卡 BIN 不以 91/92/93 开头（银联 62 / Visa 4 / MC 5）→ 安全区分
+          //   阈值 17-19：USCC 退化形态（17 丢 1 位 / 18 原值丢字母 / 19 字母被替换）
+          if (value.length >= 17 && value.length <= 19 && /^9[123]/.test(value) && /^\d+$/.test(value)) continue;
+          // P4-1 URL 路径末段 FP（spy 第七批真合同 audit — 金蝶开发运维合同 footer）：
+          //   "club.kdcloud.com/article/153835620237019392" — 文末 URL 末段数字被 BANK_CARD 抢匹配
+          //   判别：match 前 30 chars 文本片段含 URL 路径特征（`.com/`/`/article/`/`http` 等）
+          {
+            const before = text.slice(Math.max(0, start - 30), start);
+            if (/\.com\/|\.cn\/|\/article\/|\.html|\.asp|\.aspx|https?:|\.org\/|\.net\//.test(before)) continue;
+          }
+          // P4-2 软件序列号 FP（spy 第七批真合同 audit — 金蝶合同 "金蝶云·星空旗舰版（1423029347329064960）"）：
+          //   商品序列号/简注在中文全角括号里，不是银行账号
+          //   判别：match 紧贴前 1 char = `（` + 紧贴后 1 char = `）`，且前无"账号"/"账户"/"卡号"等 label
+          {
+            const preChar = text[start - 1];
+            const postChar = text[start + value.length];
+            if (preChar === '（' && postChar === '）') {
+              const widerBefore = text.slice(Math.max(0, start - 15), start - 1);
+              if (!/(?:账号|账户|卡号|开户|账号|帐号|账号|账号信息|账户名|银行账|账号资)/.test(widerBefore)) {
+                continue;  // 序列号/简注 FP
+              }
+            }
+          }
           if (value.length === 16) {
             const nextChar = text[start + value.length];
             if (nextChar && /[\dXx]/.test(nextChar)) continue;
