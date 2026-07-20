@@ -156,6 +156,36 @@ const AUDIT_DOCS: AuditDoc[] = [
     name: '非遗贵州篇-委托制作合同',
     path: '<repo-path>/work/SAMPLE-CO-F/交接文件/SAMPLE-CO-K-合同:文件/2023年-岁月:SAMPLE-CO-H/【OA】节目制作/客户合同/【OA】非遗贵州篇—委托制作合同—SAMPLE-CO-K20231204.docx',
   },
+  {
+    // 2026-07-20 spy 第四批：方太客户-2023 央视直播定制合同（厨电+央视，验证新客户类型）
+    name: '方太2023-央视新闻直播定制合同',
+    path: '<repo-path>/work/SAMPLE-CO-F/交接文件/SAMPLE-CO-F-合同:文件/1、客户合同/其他客户合同/方太/2023年-方太/2023方太-央视直播/审核稿/方太-2023年央视新闻直播定制合同-3r-FW20230213.docx',
+  },
+  {
+    // 2026-07-20 spy 第四批：五粮液-SAMPLE-CO-M项目合同（酒类客户，验证新行业）
+    name: '五粮液-SAMPLE-CO-M项目合同',
+    path: '<repo-path>/work/SAMPLE-CO-F/暂不交接/SAMPLE-CO-F【历史合同】/客户合同/五粮液/五粮液SAMPLE-CO-M项目合同（客户版）.docx',
+  },
+  {
+    // 2026-07-20 spy 第四批：一汀&SAMPLE-CO-F达人合作协议（茅台品牌推广目录，验证自然人达人合作）
+    name: '一汀-SAMPLE-CO-F达人合作协议',
+    path: '<repo-path>/模板/茅台品牌推广、公关、公众号运营/（定稿）20250515一汀&SAMPLE-CO-F达人合作协议-财务修订版.docx',
+  },
+  {
+    // 2026-07-20 spy 第四批：演员录制合同-个人模板（自然人主导合同，验证 NAME/ADDRESS 边界）
+    name: '演员录制合同-个人模板',
+    path: '<repo-path>/模板/艺人合同/演员录制合同-个人.docx',
+  },
+  {
+    // 2026-07-20 spy 第四批：终止协议-方太 2025（终止类合同，验证甲方/乙方交替叙述）
+    name: '终止协议-方太2025',
+    path: '<repo-path>/work/SAMPLE-CO-F/交接文件/SAMPLE-CO-F-合同:文件/1、客户合同/其他客户合同/方太/2025年-方太/方太腾讯剧植项目遗留问题/终止协议-方太-20250624.docx',
+  },
+  {
+    // 2026-07-20 spy 第四批：中国旅游报社合作协议（央媒事业单位，验证新型主体）
+    name: '中国旅游报社-合作协议',
+    path: '<repo-path>/模板/茅台品牌推广、公关、公众号运营/（定稿）中国旅游报社合作协议 (1).docx',
+  },
 ];
 
 function toArrayBuffer(buf: Uint8Array): ArrayBuffer {

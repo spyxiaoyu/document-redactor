@@ -738,6 +738,44 @@ describe('AMOUNT_UPPER + BANK_CARD 大括号/前导 0 bug 修复', () => {
         console.log(`\n[case 54] 输入: "${text}" → 匹配: ${JSON.stringify(matches)}`);
         expect(matches.some(m => m.includes('补助') || m.includes('政府'))).toBe(false);
       });
+
+      // 第四批 audit（方太2023/一汀/演员录制） — 5 个新 FP 修复
+      it('case 55: "达人、经纪公司（如有）" → 切"经"剩"纪"1 hanChar 应拒', () => {
+        const text = '达人、经纪公司（如有）应保持良好形象';
+        const matches = findCompany(text);
+        console.log(`\n[case 55] 输入: "${text}" → 匹配: ${JSON.stringify(matches)}`);
+        expect(matches).not.toContain('纪公司');
+        expect(matches).not.toContain('经纪公司');
+      });
+
+      it('case 56: "本合同经双方加盖公司" → 叙述词"加盖"应拒', () => {
+        const text = '本合同经双方加盖公司印章';
+        const matches = findCompany(text);
+        console.log(`\n[case 56] 输入: "${text}" → 匹配: ${JSON.stringify(matches)}`);
+        expect(matches.some(m => m.includes('双方') || m.includes('加盖'))).toBe(false);
+      });
+
+      it('case 57: "上述甲方包括SAMPLE-CO-A的成员单位（宁波方太..." → 叙述词"上述/包括"应拒', () => {
+        const text = '上述甲方包括SAMPLE-CO-A的成员单位（宁波方太厨具有限公司';
+        const matches = findCompany(text);
+        console.log(`\n[case 57] 输入: "${text}" → 匹配: ${JSON.stringify(matches)}`);
+        expect(matches.some(m => m.includes('上述') || m.includes('包括'))).toBe(false);
+      });
+
+      it('case 58: "以保险公司承担理赔" → coverb"以"应拒', () => {
+        const text = '以保险公司承担理赔责任';
+        const matches = findCompany(text);
+        console.log(`\n[case 58] 输入: "${text}" → 匹配: ${JSON.stringify(matches)}`);
+        expect(matches.some(m => m === '以保险公司')).toBe(false);
+      });
+
+      // 回归保护 — v4 cuttablePrefix 严格化不能误伤真简称
+      it('case 59 (回归): "甲方为腾讯集团" → 切"甲方为"剩"腾讯"2 hanChar 应保留', () => {
+        const text = '甲方为腾讯集团';
+        const matches = findCompany(text);
+        console.log(`\n[case 59] 输入: "${text}" → 匹配: ${JSON.stringify(matches)}`);
+        expect(matches).toContain('腾讯集团');
+      });
     });
   });
 });
