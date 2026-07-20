@@ -285,6 +285,17 @@ describe('AMOUNT_UPPER + BANK_CARD 大括号/前导 0 bug 修复', () => {
       console.log(`\n[case A3] 输入: "${text}" → 匹配: ${JSON.stringify(matches)}`);
       expect(matches.some(m => m === '贰元叁角伍分')).toBe(true);
     });
+
+    it('case A4: 第五批 audit — 弱电改造 "伍万壹仟玖佰】元整" → 中段含 】 是 FP', () => {
+      // 弱电改造施工合同 [907-916] 等 4 处：AMT_UPPER 中段含 】 是误识别
+      // v4 修法（d155449）允许 】 作分隔符 → 副作用：中间 】 也会被吃进 amount
+      // 修法：】 只允许在 元 之前（紧贴 form），不允许在 amount 中段
+      const text = '管理费人民币伍万壹仟玖佰】元整';
+      const matches = findByType(text, 'AMOUNT_UPPER');
+      console.log(`\n[case A4] 输入: "${text}" → 匹配: ${JSON.stringify(matches)}`);
+      expect(matches).not.toContain('伍万壹仟玖佰】元整');
+      expect(matches.some(m => m.includes('玖佰】'))).toBe(false);
+    });
   });
 
   describe('BANK_CARD 应保留前导 0', () => {
@@ -775,6 +786,28 @@ describe('AMOUNT_UPPER + BANK_CARD 大括号/前导 0 bug 修复', () => {
         const matches = findCompany(text);
         console.log(`\n[case 59] 输入: "${text}" → 匹配: ${JSON.stringify(matches)}`);
         expect(matches).toContain('腾讯集团');
+      });
+
+      // 第五批 audit（保证合同/品牌咨询/催款函/弱电改造/顾问咨询）— 4 类新 FP 修复
+      it('case 60: "围绕公司整体战略规划" → 叙述词"围绕"应拒', () => {
+        const text = '围绕公司整体战略规划以及品牌建设';
+        const matches = findCompany(text);
+        console.log(`\n[case 60] 输入: "${text}" → 匹配: ${JSON.stringify(matches)}`);
+        expect(matches).not.toContain('围绕公司');
+      });
+
+      it('case 61: "致央视创造传媒有限公司：" → 叙述前缀"致"应拒', () => {
+        const text = '致央视创造传媒有限公司：';
+        const matches = findCompany(text);
+        console.log(`\n[case 61] 输入: "${text}" → 匹配: ${JSON.stringify(matches)}`);
+        expect(matches.some(m => m.includes('致'))).toBe(false);
+      });
+
+      it('case 62: "需经物业公司专业工程人员" → 切"经"剩"物业"通用名词应拒', () => {
+        const text = '需经物业公司专业工程人员审核';
+        const matches = findCompany(text);
+        console.log(`\n[case 62] 输入: "${text}" → 匹配: ${JSON.stringify(matches)}`);
+        expect(matches.some(m => m.includes('物业'))).toBe(false);
       });
     });
   });

@@ -103,6 +103,28 @@ export class SensitiveFinder {
           }
         }
 
+        // NAME label 误识别过滤（spy 第五批 audit — 品牌 [1680-1682][1715-1717] "电话" FP 修复）：
+        //   NAME regex `(?<=姓名|名字|客户姓名|联系人)[:：]\s*[\u4e00-\u9fa5]{2,4}`
+        //   lookbehind 匹配后，name 本体可能不是真姓名，而是"电话/手机/邮箱/地址"等 label
+        //   修法：value 命中常见非姓名 label → continue
+        //   真姓名（张三/李四/王五等）2-4 hanChars 不在排除列表 → 保留 ✓
+        if (rule.type === 'NAME') {
+          if (/^(?:电话|手机|邮箱|地址|邮编|传真|网址|微信|QQ|微信|联系人|姓名|名字|客户姓名)$/.test(value)) continue;
+        }
+
+        // AMOUNT_UPPER 中段孤立 】 FP 过滤（spy 第五批 audit — 弱电改造 [907-916]/[977-986]/[1054-1064]/[1103-1112] 4 处 FP）：
+        //   原文是 docx 表格残余括号（如 "管理费人民币伍万壹仟玖佰】元整" 中段独立出现 `】`）
+        //   真 bracket-wrapped amount 必有 `【...】` 配对（A1 case "【壹拾伍万陆仟肆佰肆拾】元整"）
+        //     → match 前 5 chars 文本片段必有 `【`
+        //   孤立 `】`（无 `【` 配对）→ docx 表格 cell 残余 → 拒
+        //   阈值 5 chars：足够覆盖 `【X`（X 是 match 前 1 个字符）场景
+        if (rule.type === 'AMOUNT_UPPER') {
+          if (value.includes('】')) {
+            const before = text.slice(Math.max(0, start - 5), start);
+            if (!before.includes('【')) continue;
+          }
+        }
+
         // COMPANY 排除词 + body 合法性检查（regex 负向后顾 + post-filter 兜底）
         //   - regex 已在 BuiltinRules.ts v2 加 (?<![这那每...]) + (?<!委托)(?<!代理)(?<!代表) lookbehind
         //   - 这里兜底：body 起始位置的合同模板前缀（甲方为/委托/代理等）切断；
@@ -147,10 +169,12 @@ if (!formMatch) continue;
           //     切右括号(前一实体残留) + "子公司"通用前缀 → emit "SAMPLE-CO-H（上海）文化科技有限公司" ✅
           //     真公司字号不以 "）"/")"/"子公司" 开头 → 不误伤
           const cuttablePrefix = /^(?:甲方为?|乙方为?|丙方为?|丁方为?|戊方为?|己方为?|庚方为?|辛方为?|壬方为?|癸方为?|方为?|经|因|委托|代理|代表|合作|承办|服务|负责|投资方为|约定以书面形式向|）|\)|子公司)/;
+          let lastCutLength = 0;
           while (safeStart < body.length) {
             const m = body.slice(safeStart).match(cuttablePrefix);
             if (!m) break;
             const cutLength = m[0].length;
+            lastCutLength = cutLength;
             // v4 放宽切断：cuttablePrefix 命中的是已知合同模板词，直接切不论剩余长度
             // （剩余长度兜底在外层 hanChars < 3 检查）
             // 切断后允许跳过 1-4 个字符（公司名/标点）再切下一轮 verb 前缀
@@ -174,11 +198,18 @@ if (!formMatch) continue;
           const hanChars = safeBody.match(/[\u4e00-\u9fa5]/g) || [];
           if (hanChars.length < 1) continue;  // safety net
           if (hanChars.length < 3 && safeStart === 0) continue;
-          // v6 严格化（spy 第四批 audit — 一汀 [2501]/[2770] "纪公司" FP 修复）：
-          //   - 单字 cuttablePrefix（如"经"/"因"）切完后剩 < 2 hanChars → 拒
-          //   - 例 "达人、经纪公司" → 切"经"剩"纪"1 hanChar → 拒（避免 emit "纪公司" 3 chars 残段）
-          //   - 回归保护：case 59 "甲方为腾讯集团" 切"甲方为"剩"腾讯"2 hanChars ≥2 → 保留 ✓
-          if (safeStart > 0 && hanChars.length < 2) continue;
+          // v7 严格化分单/多字 cut（spy 第五批 audit — 品牌 [113-117] "围绕公司" FP 修复）：
+          //   - 单字 cuttablePrefix（"）/）/经/因"）切完后剩 < 3 hanChars → 拒
+          //     例 "（1）围绕公司" → 切"）"剩"围绕"2 hanChars <3 → 拒 ✓
+          //     例 "需经物业公司" → 切"经"剩"物业"2 hanChars <3 → 拒 ✓
+          //   - 多字 cuttablePrefix（"甲方为"/"方为"/"子公司"）切完后剩 < 2 hanChars → 拒
+          //     例 "达人、经纪公司" → 切"经"1字 → 剩"纪"1 <2 → 拒 ✓
+          //     例 "甲方为腾讯集团" 切"甲方为"3字 → 剩"腾讯"2 ≥2 → 保留 ✓
+          //     例 "）子公司SAMPLE-CO-H（上海）..." 切"）"1字+扫"子公司"3字 → lastCutLength=3 → 剩"SAMPLE-CO-H..." ≥3 → 保留 ✓
+          if (safeStart > 0) {
+            if (lastCutLength === 1 && hanChars.length < 3) continue;
+            if (lastCutLength >= 2 && hanChars.length < 2) continue;
+          }
 
           // 纯 form 检查（有关事项说明 audit — case 51 [140-146]/[750-756] "有限责任公司" FP）：
           //   - value 整体就是 form 词（无字号）→ 不是真公司名，拒
@@ -411,7 +442,7 @@ const ACTION_VERB_TRIGGERS = /(应当|必须|未经|未发生|不视为|代为|�
  *   - "青山资本向"/"股权制定并经" → end coverb → 拒
  *   - "为集团"/"为所有集团" → "为X集团" specific → 拒
  */
-const NARRATIVE_BOUNDARY_VERB_START = /^[且并或向对由经及而再还但若就据如在至从被给把让使]/;
+const NARRATIVE_BOUNDARY_VERB_START = /^[且并或向对由经及而再还但若就据如在至从被给把让使致需]/;
 const NARRATIVE_BOUNDARY_VERB_END = /[且并或向对由为经及而再还但若就据如在至从被给把让使以]$/;
 
 function splitAndEmitBody(
