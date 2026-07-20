@@ -810,5 +810,82 @@ describe('AMOUNT_UPPER + BANK_CARD 大括号/前导 0 bug 修复', () => {
         expect(matches.some(m => m.includes('物业'))).toBe(false);
       });
     });
+
+    /**
+     * 第六批 audit — 全目录扫描 115 模板 docx 暴露的新 FP（数据驱动，不用手挑）：
+     *   - spy 6 docx audit 在 4 docx 上跑出来，但还有 ~100 docx 没扫
+     *   - 这次用脚本全扫，每个 docx 列出所有 matches，对照原文人工核对价值
+     *   - 结果发现以下 6 类 FP（跨 3 个 docx：方太腾讯/代销协议/演员录制）：
+     *     ① COMPANY "剧目由北京腾讯文化传媒..." "剧目由" coverb 前缀漏切
+     *     ② COMPANY "的独家经纪公司或代理公司" 描述性短语被识别
+     *     ③ COMPANY "北京示例示例兄弟影院有限公司公司" mammoth 双公司拼接（docx 表格 cell merge 后 "公司   公司账号" 被吃成 "公司公司账号"）
+     *     ④ BANK_CARD "911101065976768466" 等 18位纯数字 统一社会信用代码（USCC 没 letter）被误吃
+     *     ⑤ NAME "联系电话"/"电子邮箱"/"联系地址" 多字 label 误识别（上一批只挡了 3字短 label）
+     *     ⑥ AMOUNT_UPPER "万元" 单独 2 chars — 结构 regex bug — 见 AmountUpperRegex.test.ts
+     *
+     * §11 测试先行铁律: 先 red 写 probe，复现 6 类 FP
+     */
+    describe('第六批 audit 全目录扫描 — 6 类新 FP', () => {
+      it('case 63: COMPANY "剧目由北京腾讯..." → 应切"剧目由"剩真简称', () => {
+        // 方太腾讯 [1359-1374] FP
+        const text = '本剧目名称以片头字幕上载明的名称为准。剧目由北京腾讯文化传媒有限公司（以下简称"腾讯"或"腾讯方"）投资拍摄';
+        const matches = findCompany(text);
+        console.log(`\n[case 63] 输入: "...${text.slice(20, 70)}..." → 匹配: ${JSON.stringify(matches)}`);
+        expect(matches.some(m => m.startsWith('剧目由'))).toBe(false);
+        expect(matches).toContain('北京腾讯文化传媒有限公司');
+      });
+
+      it('case 64: COMPANY "）的独家经纪公司或代理公司" → 描述性短语应拒', () => {
+        // 演员录制 王鸥 真实上下文：'...以下简称"乙方艺人"）的独家经纪公司或代理公司，甲方拟邀请...'
+        // regex 从 "）" 起匹配 → cuttablePrefix 切 "）" → safeBody "的独家经纪公司或代理"（以助词"的"开头）
+        // 真公司 body 绝不以助词"的"开头 → NARRATIVE_BOUNDARY_VERB_START ^的 → 拒
+        const text = '5010219821028002X，以下简称"乙方艺人"）的独家经纪公司或代理公司，甲方拟邀请乙方艺人参与节目录制';
+        const matches = findCompany(text);
+        console.log(`\n[case 64] 输入: "...）的独家经纪公司或代理公司..." → 匹配: ${JSON.stringify(matches)}`);
+        expect(matches.some(m => m.includes('独家经纪公司或代理公司'))).toBe(false);
+      });
+
+      it('case 64b (回归): "美的集团有限公司" body 中段"的"不应被误伤', () => {
+        // NARRATIVE_BOUNDARY_VERB_START 只查首字符 ^的，"美的" 的 "的" 在中段
+        const text = '客户美的集团有限公司';
+        const matches = findCompany(text);
+        console.log(`\n[case 64b] 输入: "美的集团有限公司" → 匹配: ${JSON.stringify(matches)}`);
+        expect(matches.some(m => m.includes('美的集团'))).toBe(true);
+      });
+
+      it('case 65: COMPANY mammoth 双公司拼接 "X有限公司公司" → 应拒（mammoth ate space）', () => {
+        // 代销协议 [5896-5913] FP = "北京示例示例兄弟影院有限公司公司"
+        // 真实 docx 内容: "公司名称：北京示例示例兄弟影院有限公司\n公司账号：..."
+        // mammoth 双 cell 拼接中间空格消失 → "X有限公司  公司账号" → regex 匹配 "X有限公司公司"
+        const text = '公司名称：北京示例示例兄弟影院有限公司公司账号：318156021864';
+        const matches = findCompany(text);
+        console.log(`\n[case 65] 输入: "...有限公司公司账号..." → 匹配: ${JSON.stringify(matches)}`);
+        expect(matches.some(m => m.endsWith('公司公司'))).toBe(false);
+      });
+
+      it('case 66: BANK_CARD 18 位纯数字 USCC（无 letter）→ 应拒', () => {
+        // 代销协议 [3285-3305] 等 FP = "911101065976768466" — 统一社会信用代码无 letter
+        // 真 USCC: 91110106597676846C，docx mammoth 拼接丢了 C
+        // 区分 18+ 位纯数字 USCC（不会是银行卡 — 银行卡16-19位有 Luhn 校验或随机）
+        const text = '示例兄弟环球影院管理有限公司911101065976768466北京市示例区区示例东路';
+        const finder = new SensitiveFinder();
+        const result = finder.findSensitiveContent(text);
+        const banks = result.matches.filter(m => m.type === 'BANK_CARD');
+        console.log(`\n[case 66] BANK_CARD 匹配: ${JSON.stringify(banks.map(m => m.value))}`);
+        expect(banks.some(m => m.value === '911101065976768466')).toBe(false);
+      });
+
+      it('case 67: NAME "联系电话"（4字 label）→ 应拒', () => {
+        // 方太腾讯 [8468-8472] FP — 上一批只挡了 3字短 label
+        // 真名（张三/李四/王五等）2-4 hanChars 不在排除列表
+        // 修复：扩展 filter 含 联系电话/手机号码/电子邮箱/联系地址 等 4字 label
+        const text = '甲方联系人：\n\n联系电话：\n\n电子邮箱：';
+        const finder = new SensitiveFinder();
+        const result = finder.findSensitiveContent(text);
+        const names = result.matches.filter(m => m.type === 'NAME').map(m => m.value);
+        console.log(`\n[case 67] NAME 匹配: ${JSON.stringify(names)}`);
+        expect(names).not.toContain('联系电话');
+      });
+    });
   });
 });

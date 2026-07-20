@@ -97,6 +97,11 @@ export class SensitiveFinder {
         //     - 16 位 + 换行/空格 → 真卡号 → 保留 ✅
         if (rule.type === 'BANK_CARD') {
           if (value.length >= 17 && /^[1-9]\d{5}(?:18|19|20)\d{2}/.test(value)) continue;
+          // 18 位纯数字 统一社会信用代码 FP（第六批 audit — 代销协议 "911101065976768466"）：
+          //   USCC 18 位 = 登记管理部门代码"9"(工商) + 机构类别"1/2/3"(企业/个体/合作社) + 行政区划码 + 主体码 + 校验码
+          //   docx mammoth 拼接常丢尾部字母校验码（如真值 91110106597676846C）→ 退化成 18 位纯数字被 BANK_CARD 误吃
+          //   银行卡 BIN 不以 91/92/93 开头（银联 62 / Visa 4 / MC 5）→ 安全区分，不误伤真卡
+          if (value.length === 18 && /^9[123]/.test(value)) continue;
           if (value.length === 16) {
             const nextChar = text[start + value.length];
             if (nextChar && /[\dXx]/.test(nextChar)) continue;
@@ -109,7 +114,9 @@ export class SensitiveFinder {
         //   修法：value 命中常见非姓名 label → continue
         //   真姓名（张三/李四/王五等）2-4 hanChars 不在排除列表 → 保留 ✓
         if (rule.type === 'NAME') {
-          if (/^(?:电话|手机|邮箱|地址|邮编|传真|网址|微信|QQ|微信|联系人|姓名|名字|客户姓名)$/.test(value)) continue;
+          // 第六批 audit：扩展多字 label（上一批只挡 2-3 字短 label，漏了 "联系电话" 等 4 字 label）
+          //   NAME regex lookbehind "联系人：" 后 \s* 跨过换行，把下一行 label "联系电话" 4 hanChars 当姓名
+          if (/^(?:电话|手机|邮箱|地址|邮编|传真|网址|微信|QQ|微信|联系人|姓名|名字|客户姓名|联系电话|手机号码|电子邮箱|联系地址|电子信箱|联系方式|电子邮件|通讯地址|联系人员|移动电话|办公电话)$/.test(value)) continue;
         }
 
         // AMOUNT_UPPER 中段孤立 】 FP 过滤（spy 第五批 audit — 弱电改造 [907-916]/[977-986]/[1054-1064]/[1103-1112] 4 处 FP）：
@@ -119,6 +126,13 @@ export class SensitiveFinder {
         //   孤立 `】`（无 `【` 配对）→ docx 表格 cell 残余 → 拒
         //   阈值 5 chars：足够覆盖 `【X`（X 是 match 前 1 个字符）场景
         if (rule.type === 'AMOUNT_UPPER') {
+          // 单独单位词 FP（第六批 audit — "十万元以下"/"一百万元起"/"百万元" 回溯出 "万元" 2 chars）：
+          //   regex 主体 [零壹...]+(?:[万亿][...]*)*】?元 从量词字符起匹配失败（如 "十" 不在 [万亿]，
+          //   outer * 0 iter，元 需在 万 位 → fail），engine 跳到 万/亿 位置 match "万元" 2 chars（false short）。
+          //   真大写金额的 万/亿 是"数量级单位"，前面必有量词（壹贰...拾佰仟 或 阿拉伯数字）。
+          //   value 直接以 万/亿 开头（可选 人民币 前缀）→ 单位无量词 → 拒。
+          //   回归安全：真金额 "壹拾伍万元整"(起壹)/"180万元"(起1)/"65.2万元"(起6) 均不以 万/亿 开头。
+          if (/^(?:人民币)?[万亿]/.test(value)) continue;
           if (value.includes('】')) {
             const before = text.slice(Math.max(0, start - 5), start);
             if (!before.includes('【')) continue;
@@ -134,6 +148,16 @@ export class SensitiveFinder {
         if (rule.type === 'COMPANY') {
           if (value.includes('关联公司')) continue;
           if (/^(?:甲方|乙方)公司$/.test(value)) continue;
+
+          // mammoth 双 cell 拼接 trim（第六批 audit — 代销协议 "北京示例示例兄弟影院有限公司公司账号"）：
+          //   docx 表格 "X有限公司" | "公司账号：..." 两 cell 被 mammoth 拼接丢空格 → "X有限公司公司账号"
+          //   → regex 贪婪吞到第二个 "公司" 作 form → value 以 "公司公司" 结尾（第二个 公司 是下一 cell "公司账号" 的头）
+          //   修法：value 以 "公司公司" 结尾 → 去掉末尾 1 个 "公司"（真公司名不以 "公司公司" 结尾）
+          //   只从末尾裁剪 → start 不变，invariant text.slice(start, start+len)===value 仍成立
+          //   → emit 真公司 "北京示例示例兄弟影院有限公司"（不退回 manual）
+          if (value.endsWith('公司公司')) {
+            value = value.slice(0, -2);
+          }
 
           // 提取 body（去掉 form 后缀）—— form 必须是 capture group，否则 formMatch[2] undefined
 //   alternation 顺序：JS first-match wins，"有限公司"/"分公司"/"公司"/"集团" 必须排在
@@ -168,7 +192,10 @@ if (!formMatch) continue;
           //     加 "）"/")"/"子公司"：case 47 "）子公司SAMPLE-CO-H（上海）文化科技有限公司"
           //     切右括号(前一实体残留) + "子公司"通用前缀 → emit "SAMPLE-CO-H（上海）文化科技有限公司" ✅
           //     真公司字号不以 "）"/")"/"子公司" 开头 → 不误伤
-          const cuttablePrefix = /^(?:甲方为?|乙方为?|丙方为?|丁方为?|戊方为?|己方为?|庚方为?|辛方为?|壬方为?|癸方为?|方为?|经|因|委托|代理|代表|合作|承办|服务|负责|投资方为|约定以书面形式向|）|\)|子公司)/;
+          //   - v7 cuttablePrefix 扩展（第六批 audit — 方太腾讯 "剧目由北京腾讯文化传媒有限公司"）：
+          //     加 "剧目由"：切叙述前缀 "剧目由"（"剧目" + coverb "由"）→ emit "北京腾讯文化传媒有限公司" ✅
+          //     单字 "由" 不切（NARRATIVE_BOUNDARY 已覆盖 "由X" 开头场景）；只切完整短语 "剧目由"
+          const cuttablePrefix = /^(?:甲方为?|乙方为?|丙方为?|丁方为?|戊方为?|己方为?|庚方为?|辛方为?|壬方为?|癸方为?|方为?|经|因|委托|代理|代表|合作|承办|服务|负责|投资方为|约定以书面形式向|剧目由|）|\)|子公司)/;
           let lastCutLength = 0;
           while (safeStart < body.length) {
             const m = body.slice(safeStart).match(cuttablePrefix);
@@ -433,7 +460,11 @@ const ACTION_VERB_TRIGGERS = /(应当|必须|未经|未发生|不视为|代为|�
  *       不以叙述性单字连词/介词开头或结尾。
  *
  *   - body 开头：且/并/或/向/对/由/经/及/而/再/还/但/若/就/据/如/在/至/从/被/给/把/让/使
- *     （不放 "的" — "的" 是助词中段常见如"美的"；不放 "为" — "为" 单字在真公司中段如"华为"）
+ *     （不放 "为" — "为" 单字在真公司中段如"华为"）
+ *   - v_6thbatch：body 开头加 "的"（第六批 audit — 演员录制 "）的独家经纪公司或代理公司"）
+ *     真公司 body 首字是地名/品牌（"美的集团" body 首字"美"），绝不以助词 "的" 开头
+ *     → "的独家经纪公司或代理"（"）"被 cuttablePrefix 切后残留的描述性短语）→ ^的 → 拒
+ *     注意：仅查首字符（^的），"美的集团" 的 "的" 在中段不受影响
  *   - body 末尾：且/并/或/向/对/由/为/经/及/而/再/还/但/若/就/据/如/在/至/从/被/给/把/让/使
  *     （放 "为" 在末尾 — body 末尾 "为" 后跟 form 是叙述短语如"青山资本为公司"）
  *
@@ -442,7 +473,7 @@ const ACTION_VERB_TRIGGERS = /(应当|必须|未经|未发生|不视为|代为|�
  *   - "青山资本向"/"股权制定并经" → end coverb → 拒
  *   - "为集团"/"为所有集团" → "为X集团" specific → 拒
  */
-const NARRATIVE_BOUNDARY_VERB_START = /^[且并或向对由经及而再还但若就据如在至从被给把让使致需]/;
+const NARRATIVE_BOUNDARY_VERB_START = /^[且并或向对由经及而再还但若就据如在至从被给把让使致需的]/;
 const NARRATIVE_BOUNDARY_VERB_END = /[且并或向对由为经及而再还但若就据如在至从被给把让使以]$/;
 
 function splitAndEmitBody(
