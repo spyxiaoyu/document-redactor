@@ -56,6 +56,26 @@ const AUDIT_DOCS: AuditDoc[] = [
     name: 'SAMPLE-CO-J_公司章程_Final',
     path: '<repo-path>/work/SAMPLE-CO-F/交接文件/SAMPLE-CO-F-合同:文件/5、SAMPLE-CO-F-投融资/投资-SAMPLE-CO-J/2023年/【OA】酪神_Pre-A轮交易文件及交割文件_Final/交易文件/3. SAMPLE-CO-J_公司章程_Final.docx',
   },
+  {
+    // 2026-07-20 spy 扩展：补充协议类（"开播！情景喜剧"）
+    name: '开播情景喜剧-第二季后期补充协议二',
+    path: '<repo-path>/work/SAMPLE-CO-F/交接文件/SAMPLE-CO-K-合同:文件/2023年-岁月:SAMPLE-CO-H/【OA】节目制作/客户合同/【OA】《开播！情景喜剧》第二季后期补充协议（二）20231124.docx',
+  },
+  {
+    // 2026-07-20 spy 扩展：标准后期制作合同（"青山未满"）
+    name: '青山未满-后期制作合同',
+    path: '<repo-path>/work/SAMPLE-CO-F/交接文件/SAMPLE-CO-K-合同:文件/2023年-岁月:SAMPLE-CO-H/【OA】节目制作/客户合同/【OA】《青山未满》后期制作合同.docx',
+  },
+  {
+    // 2026-07-20 spy 扩展：政府公文类（朝阳区产业政策承诺书）
+    name: '朝阳区产业政策申请承诺书',
+    path: '<repo-path>/work/SAMPLE-CO-F/交接文件/SAMPLE-CO-K-合同:文件/2023年-岁月:SAMPLE-CO-H/其他盖章文件/【OA】朝阳区产业政策补贴申请材料/附件5 朝阳区产业政策申请承诺书（2023）.docx',
+  },
+  {
+    // 2026-07-20 spy 扩展：大型后期制作合同（"2022示例尖叫之夜"）
+    name: '2022示例尖叫之夜-后期制作合同',
+    path: '<repo-path>/work/SAMPLE-CO-F/交接文件/SAMPLE-CO-K-合同:文件/2023年-岁月:SAMPLE-CO-H/【OA】节目制作/客户合同/【OA】《2022示例尖叫之夜》后期制作合同-千秋岁.docx',
+  },
 ];
 
 function toArrayBuffer(buf: Uint8Array): ArrayBuffer {

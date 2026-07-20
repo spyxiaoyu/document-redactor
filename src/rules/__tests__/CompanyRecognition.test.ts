@@ -614,5 +614,33 @@ describe('AMOUNT_UPPER + BANK_CARD 大括号/前导 0 bug 修复', () => {
         expect(matches).toContain('示例乳业集团有限公司');
       });
     });
+
+    describe('青山未满 audit — 地址误识别为 COMPANY FP 修复', () => {
+      // 根因：原文是地址 "北京市朝阳区青年路（信托公司仓库）5号楼三层A-306"
+      //   COMPANY regex body 允许中文括号，从"北京市朝阳区青年路（信托"吞到第一个"公司"
+      //   → 假公司名 "北京市朝阳区青年路（信托公司"
+      // 修法：body 含 行政区划(省/市/区/县) + 街道 token(路/街/道/巷/弄) → 判地址 FP 拒
+      it('case 40: 地址"北京市朝阳区青年路（信托公司仓库）..." → 不应识别为 COMPANY', () => {
+        const text = '地址：北京市朝阳区青年路（信托公司仓库）5号楼三层A-306';
+        const matches = findCompany(text);
+        console.log(`\n[case 40] 输入: "${text}" → 匹配: ${JSON.stringify(matches)}`);
+        expect(matches.some(m => m.includes('信托公司'))).toBe(false);
+        expect(matches.some(m => m.includes('青年路'))).toBe(false);
+      });
+
+      it('case 41 (regression): "北京示例科技有限公司" → 真公司应保留', () => {
+        const text = '甲方：北京示例科技有限公司';
+        const matches = findCompany(text);
+        console.log(`\n[case 41] 输入: "${text}" → 匹配: ${JSON.stringify(matches)}`);
+        expect(matches).toContain('北京示例科技有限公司');
+      });
+
+      it('case 42 (regression): "中国建设银行股份有限公司" → 真公司应保留', () => {
+        const text = '开户行：中国建设银行股份有限公司';
+        const matches = findCompany(text);
+        console.log(`\n[case 42] 输入: "${text}" → 匹配: ${JSON.stringify(matches)}`);
+        expect(matches).toContain('中国建设银行股份有限公司');
+      });
+    });
   });
 });
