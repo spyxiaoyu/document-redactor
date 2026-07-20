@@ -243,4 +243,75 @@ describe('第七批 spy 真合同 audit — 4 类 bug probe（RED 先行）', ()
       expect(banks).toContain('0200025609200013713');
     });
   });
+
+  // ==================== P5 NAME 中段漏识别（习酒真合同）====================
+  describe('P5 NAME 中段 label "项目负责人" 漏识别（习酒合同反复出现）', () => {
+    it('case P5-1: "项目负责人为蔡明衡" → 应识别 NAME "蔡明衡"', () => {
+      const text = '甲方项目负责人为蔡明衡，负责本项目的整体推进';
+      const finder = buildFinder();
+      const result = finder.findSensitiveContent(text);
+      const names = result.matches.filter(m => m.type === 'NAME').map(m => m.value);
+      console.log(`\n[case P5-1] names=${JSON.stringify(names)}`);
+      expect(names).toContain('蔡明衡');
+    });
+
+    it('case P5-2 (回归): "联系人为张三" 应识别 NAME', () => {
+      const text = '甲方联系人为张三，电话 13000000000';
+      const finder = buildFinder();
+      const result = finder.findSensitiveContent(text);
+      const names = result.matches.filter(m => m.type === 'NAME').map(m => m.value);
+      console.log(`\n[case P5-2] names=${JSON.stringify(names)}`);
+      expect(names).toContain('张三');
+    });
+  });
+
+  // ==================== P6 BANK_CARD 21位账号被 regex 截 19 位（真合同反复出现）====================
+  describe('P6 BANK_CARD 21位美元/欧元外币账号被 regex 上限截断（CTR 合同反复出现）', () => {
+    it('case P6-1: "美元账号：110060437146100000175" 21 位 → 应完整识别', () => {
+      // CTR 合同美元账号真合同反复出现 — 21 位
+      // regex 当前 \d{3,6} 截 19 位，丢末尾 2 位 "75"
+      const text = '美元账号：110060437146100000175';
+      const finder = buildFinder();
+      const result = finder.findSensitiveContent(text);
+      const banks = result.matches.filter(m => m.type === 'BANK_CARD').map(m => m.value);
+      console.log(`\n[case P6-1] banks=${JSON.stringify(banks)}`);
+      expect(banks).toContain('110060437146100000175');
+    });
+
+    it('case P6-2: "欧元账号：110060437386100000122" 21 位 → 应完整识别', () => {
+      const text = '欧元账号：110060437386100000122';
+      const finder = buildFinder();
+      const result = finder.findSensitiveContent(text);
+      const banks = result.matches.filter(m => m.type === 'BANK_CARD').map(m => m.value);
+      console.log(`\n[case P6-2] banks=${JSON.stringify(banks)}`);
+      expect(banks).toContain('110060437386100000122');
+    });
+
+    it('case P6-3 (回归): 19 位真卡号不应回归', () => {
+      const text = '工商银行账号：0200025609200013713';
+      const finder = buildFinder();
+      const result = finder.findSensitiveContent(text);
+      const banks = result.matches.filter(m => m.type === 'BANK_CARD').map(m => m.value);
+      console.log(`\n[case P6-3] banks=${JSON.stringify(banks)}`);
+      expect(banks).toContain('0200025609200013713');
+    });
+
+    it('case P6-4 (回归): 17 位农行账号应保留', () => {
+      const text = '银行账号：23380001040000208';
+      const finder = buildFinder();
+      const result = finder.findSensitiveContent(text);
+      const banks = result.matches.filter(m => m.type === 'BANK_CARD').map(m => m.value);
+      console.log(`\n[case P6-4] banks=${JSON.stringify(banks)}`);
+      expect(banks).toContain('23380001040000208');
+    });
+
+    it('case P6-5 (回归): 16 位真卡号应保留', () => {
+      const text = '账号：6228480000000000';
+      const finder = buildFinder();
+      const result = finder.findSensitiveContent(text);
+      const banks = result.matches.filter(m => m.type === 'BANK_CARD').map(m => m.value);
+      console.log(`\n[case P6-5] banks=${JSON.stringify(banks)}`);
+      expect(banks).toContain('6228480000000000');
+    });
+  });
 });
