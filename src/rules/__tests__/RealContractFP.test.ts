@@ -314,4 +314,84 @@ describe('第七批 spy 真合同 audit — 4 类 bug probe（RED 先行）', ()
       expect(banks).toContain('6228480000000000');
     });
   });
+
+  // ==================== P7-P9 PHONE/BANK_CARD 大额支付行号 + USCC 切片 FP（CMBC 合同反复出现）====================
+  describe('P7-P9 大额支付行号/CNAPS 误识别 + USCC 切片误识别（CMBC 真实合同）', () => {
+    it('case P7: 12 位大额行号 "大额支付行号：102100009818" → 不应识别 PHONE', () => {
+      // CMBC 合同"大额支付行号：102100009818" — 工行大额行号（CNAPS 12 位）被 PHONE regex 截 11 位
+      // 真合同反复出现：102100009818 / 105100000017 / 313584000017 等
+      const text = '大额支付行号：102100009818';
+      const finder = buildFinder();
+      const result = finder.findSensitiveContent(text);
+      const phones = result.matches.filter(m => m.type === 'PHONE').map(m => m.value);
+      console.log(`\n[case P7] phones=${JSON.stringify(phones)}`);
+      expect(phones).not.toContain('02100009818');
+      expect(phones).not.toContain('102100009818');
+    });
+
+    it('case P8: 16 位民生大额行号 "票面账号：0137014210000015" → 不应识别 BANK_CARD', () => {
+      // CMBC 合同"票面账号：0137014210000015" — 民生大额行号（CNAPS 16 位）被 BANK_CARD 识别
+      const text = '票面账号：0137014210000015';
+      const finder = buildFinder();
+      const result = finder.findSensitiveContent(text);
+      const banks = result.matches.filter(m => m.type === 'BANK_CARD').map(m => m.value);
+      console.log(`\n[case P8] banks=${JSON.stringify(banks)}`);
+      expect(banks).not.toContain('0137014210000015');
+    });
+
+    it('case P9: PHONE regex 在 USCC 中段切出 13 位 "0105306792506" → 不应识别 PHONE', () => {
+      // CMBC 合同 "税号：911101053067925068" — mammoth 拼丢换行后 18 位纯数字 USCC
+      // PHONE regex 中段切出 "0105306792506" 13 位误识别
+      const text = '911101053067925068\n户名：测试';
+      const finder = buildFinder();
+      const result = finder.findSensitiveContent(text);
+      const phones = result.matches.filter(m => m.type === 'PHONE').map(m => m.value);
+      console.log(`\n[case P9] phones=${JSON.stringify(phones)}`);
+      expect(phones).not.toContain('0105306792506');
+    });
+
+    it('case P9-regression (回归): 真 11 位手机号 "13661316595" 应保留', () => {
+      const text = '联系电话：13661316595';
+      const finder = buildFinder();
+      const result = finder.findSensitiveContent(text);
+      const phones = result.matches.filter(m => m.type === 'PHONE').map(m => m.value);
+      console.log(`\n[case P9-regression] phones=${JSON.stringify(phones)}`);
+      expect(phones).toContain('13661316595');
+    });
+
+    it('case P8-regression (回归): 真 19 位工行账号不应回归', () => {
+      const text = '账号：0200025609200013713';
+      const finder = buildFinder();
+      const result = finder.findSensitiveContent(text);
+      const banks = result.matches.filter(m => m.type === 'BANK_CARD').map(m => m.value);
+      console.log(`\n[case P8-regression] banks=${JSON.stringify(banks)}`);
+      expect(banks).toContain('0200025609200013713');
+    });
+  });
+
+  // ==================== P10/P10b COMPANY 叙述前缀 + 括号断裂 FP ====================
+  describe('P10/P10b COMPANY 合同叙述前缀 + 括号断裂 FP（CMBC/副本SAMPLE-CO-E海洛长协真实合同）', () => {
+    it('case P10: "本合作协议由北京SAMPLE-CO-E网络科技有限公司..." → 切"本合作协议由"剩真公司', () => {
+      // 副本SAMPLE-CO-E海洛长协真合同原文
+      const text = '本合作协议由北京SAMPLE-CO-E网络科技有限公司（下称"SAMPLE-CO-E网"）';
+      const finder = buildFinder();
+      const result = finder.findSensitiveContent(text);
+      const companies = result.matches.filter(m => m.type === 'COMPANY').map(m => m.value);
+      console.log(`\n[case P10] companies=${JSON.stringify(companies)}`);
+      expect(companies.some(m => m.startsWith('本合作协议由'))).toBe(false);
+      expect(companies).toContain('北京SAMPLE-CO-E网络科技有限公司');
+    });
+
+    it('case P10b: "收款单位（公司全称）：北京SAMPLE-CO-E教育科技有限公司..." → 断裂 FP 应拒', () => {
+      // CMBC 合同"收款单位（公司全称）：北京SAMPLE-CO-E教育科技有限公司" mammoth 拼接丢内容
+      // → COMPANY regex 匹配到 "收款单位（公司" 4 hanChars + form
+      const text = '收款单位（公司全称）：北京SAMPLE-CO-E教育科技有限公司';
+      const finder = buildFinder();
+      const result = finder.findSensitiveContent(text);
+      const companies = result.matches.filter(m => m.type === 'COMPANY').map(m => m.value);
+      console.log(`\n[case P10b] companies=${JSON.stringify(companies)}`);
+      expect(companies).not.toContain('收款单位（公司');
+      expect(companies).toContain('北京SAMPLE-CO-E教育科技有限公司');
+    });
+  });
 });

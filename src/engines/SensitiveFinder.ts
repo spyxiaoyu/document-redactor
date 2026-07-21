@@ -76,6 +76,19 @@ export class SensitiveFinder {
         const offset = hasCaptureGroup ? match[0].indexOf(match[1]) : 0;
         let start = match.index + offset;
 
+        // PHONE 切片 FP（第七批真合同 audit — CMBC 合同 P7/P9 反复出现）：
+        //   PHONE regex `0\d{2,4}[-.\s]?\d{7,8}` 会在更长的纯数字串中段切出 11-13 位"固话形态"子串
+        //     - P7 "大额支付行号：102100009818"（12 位 CNAPS）→ 切前一位"1"后的 "02100009818" 11 位
+        //     - P9 "911101053067925068"（18 位 USCC，mammoth 拼丢换行）→ 中段切 "0105306792506" 13 位
+        //   判别：真固话/手机号由 label（电话：）或空白分隔 → 紧邻前后不是数字
+        //         切片必然紧贴其他数字（前或后是 digit）→ 拒
+        //   回归安全：P1 "电话：01000000000"（前"："）/ "08510000000"（前"："）/ 手机号（前"："）均不受影响
+        if (rule.type === 'PHONE') {
+          const beforeChar = text[start - 1];
+          const afterChar = text[start + value.length];
+          if ((beforeChar && /\d/.test(beforeChar)) || (afterChar && /\d/.test(afterChar))) continue;
+        }
+
         // BANK_CARD post-filter v2（spy 6 docx audit — 三餐四季 [11088-11107] "4306241990006060034" 19位畸形ID FP）：
         //   BANK_CARD v3 `\d{3,6}` 让 19 位数字串被识别为银行卡，但其中一部分是畸形 ID_CARD 格式
         //   （原文档 typo 多了 1 位，ID_CARD regex 因月份不合法匹配失败，导致 BANK_CARD 抢匹配）
@@ -125,6 +138,11 @@ export class SensitiveFinder {
             }
           }
           if (value.length === 16) {
+            // 16 位 + 0 开头 FP（第七批真合同 audit — CMBC 合同 P8 "票面账号：0137014210000015" 民生 CNAPS 大额行号）：
+            //   真银行卡 16 位 BIN 只在 银联62 / Visa4 / MC5 / JCB35 段，绝不以 0 开头
+            //   CNAPS 大额支付行号 / 票据行号常以 0 开头（0137 = 民生银行）→ 16 位 0 开头 → 拒
+            //   回归安全：真账号 0 开头（工行 0200...）都是 19 位（≠16）；16 位真卡（6228...）以 6 开头
+            if (value[0] === '0') continue;
             const nextChar = text[start + value.length];
             if (nextChar && /[\dXx]/.test(nextChar)) continue;
           }
@@ -242,7 +260,7 @@ if (!formMatch) continue;
           //   - v7 cuttablePrefix 扩展（第六批 audit — 方太腾讯 "剧目由北京腾讯文化传媒有限公司"）：
           //     加 "剧目由"：切叙述前缀 "剧目由"（"剧目" + coverb "由"）→ emit "北京腾讯文化传媒有限公司" ✅
           //     单字 "由" 不切（NARRATIVE_BOUNDARY 已覆盖 "由X" 开头场景）；只切完整短语 "剧目由"
-          const cuttablePrefix = /^(?:甲方为?|乙方为?|丙方为?|丁方为?|戊方为?|己方为?|庚方为?|辛方为?|壬方为?|癸方为?|方为?|经|因|委托|代理|代表|合作|承办|服务|负责|投资方为|约定以书面形式向|剧目由|）|\)|子公司)/;
+          const cuttablePrefix = /^(?:甲方为?|乙方为?|丙方为?|丁方为?|戊方为?|己方为?|庚方为?|辛方为?|壬方为?|癸方为?|方为?|经|因|委托|代理|代表|合作|承办|服务|负责|投资方为|约定以书面形式向|剧目由|本[\u4e00-\u9fa5]{1,6}由|）|\)|子公司)/;
           let lastCutLength = 0;
           while (safeStart < body.length) {
             const m = body.slice(safeStart).match(cuttablePrefix);
@@ -272,6 +290,17 @@ if (!formMatch) continue;
           const hanChars = safeBody.match(/[\u4e00-\u9fa5]/g) || [];
           if (hanChars.length < 1) continue;  // safety net
           if (hanChars.length < 3 && safeStart === 0) continue;
+
+          // 括号断裂 FP（第七批真合同 audit — CMBC 合同 P10b "收款单位（公司全称）：..." mammoth 拼接）：
+          //   COMPANY body 允许中文/半角括号，遇 "收款单位（公司全称）：北京SAMPLE-CO-E教育科技有限公司"
+          //   regex 从 "收款单位（" 吞到第一个 "公司" → "收款单位（公司"（未配对的 "（"）
+          //   真公司名括号必配对（"SAMPLE-CO-F（海南）..."/"SAMPLE-CO-H（上海）..."）→ safeBody 括号数量不等即断裂残留 → 拒
+          //   注意：在 cuttablePrefix 切完后检查 safeBody（不查原 value），否则被切掉的前导 "）"（case 47）会误判不配对
+          {
+            const opens = (safeBody.match(/[（(]/g) || []).length;
+            const closes = (safeBody.match(/[）)]/g) || []).length;
+            if (opens !== closes) continue;
+          }
           // v7 严格化分单/多字 cut（spy 第五批 audit — 品牌 [113-117] "围绕公司" FP 修复）：
           //   - 单字 cuttablePrefix（"）/）/经/因"）切完后剩 < 3 hanChars → 拒
           //     例 "（1）围绕公司" → 切"）"剩"围绕"2 hanChars <3 → 拒 ✓
