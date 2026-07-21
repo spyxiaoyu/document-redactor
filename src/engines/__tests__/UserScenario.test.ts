@@ -3,12 +3,12 @@
  *
  * spy 在浏览器里：
  *   - 启用默认规则
- *   - 加 keyword "SAMPLE-CO-F"（只有 1 个）
+ *   - 加 keyword "辛公司"（只有 1 个）
  *   - 设密码
  *   - 加密下载 docx
  *   - 上传加密 docx + 密码 → 恢复
  *   - 看到 "联系电话：占位人占位人占位人占位人占位人_"（应是 13800000000）
- *   - 看到 "联系邮箱：SAMPLE-CO-F（北京）融媒体科技文化有限公司_"
+ *   - 看到 "联系邮箱：示例公司（北京）融媒体科技文化有限公司_"
  *
  * 之前 E2ERealRules 用 5 个 keyword 通过了，但用户场景只 1 个。
  * 写这个测试钉死"1 个 keyword"的真实路径，并且明确断言关键字段必须出现。
@@ -20,7 +20,7 @@ import { CryptoManager } from '../CryptoManager';
 import { Desensitizer } from '../Desensitizer';
 import { SensitiveFinder } from '../SensitiveFinder';
 
-const SRC = '<repo-path>/模板/SAMPLE-CT-002-知识产权服务框架协议-SAMPLE-CO-Z.docx';
+const SRC = 'test-fixtures/sample-contract-A.docx';
 const PASSWORD = 'test123';
 
 function toArrayBuffer(buf: Uint8Array): ArrayBuffer {
@@ -33,7 +33,7 @@ function mammothInput(buf: Uint8Array) {
   return { buffer: ab, arrayBuffer: ab };
 }
 
-describe("User's exact scenario: default rules + 1 keyword 'SAMPLE-CO-F'", () => {
+describe("User's exact scenario: default rules + 1 keyword '辛公司'", () => {
   it('restored text must contain the actual phone number and email', async () => {
     if (!fs.existsSync(SRC)) {
       console.log(`  skip: ${SRC} not found`);
@@ -44,9 +44,9 @@ describe("User's exact scenario: default rules + 1 keyword 'SAMPLE-CO-F'", () =>
     const extract = await mammoth.extractRawText(mammothInput(srcBuffer));
     const originalText = extract.value;
 
-    // === 用户的精确场景：默认规则 + 只加 1 个 keyword "SAMPLE-CO-F" ===
+    // === 用户的精确场景：默认规则 + 只加 1 个 keyword "辛公司" ===
     const finder = new SensitiveFinder();
-    finder.addKeywords(['SAMPLE-CO-F']);
+    finder.addKeywords(['辛公司']);
     const matches = finder.findSensitiveContent(originalText, { includeDisabled: true }).matches;
     console.log(`  matches: ${matches.length}`);
     matches.forEach((m, i) => {
@@ -106,8 +106,8 @@ describe("User's exact scenario: default rules + 1 keyword 'SAMPLE-CO-F'", () =>
     expect(restored).toContain('13800000000');
     expect(restored).toContain('contact@client-b.test');
     expect(restored).toContain('占位人');
-    expect(restored).toContain('SAMPLE-CO-F（北京）融媒体科技文化有限公司');
-    expect(restored).toContain('北京SAMPLE-CO-Z有限公司');
+    expect(restored).toContain('示例公司（北京）融媒体科技文化有限公司');
+    expect(restored).toContain('北京示例科技有限公司');
 
     // 完全一致（最严格的断言）
     if (restored !== originalText) {

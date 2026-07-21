@@ -107,7 +107,7 @@ describe('SPEC-A2-06: match value 与区间一致性 invariant', () => {
    *   - restore 时切错位置（找不到 maskedToken）
    */
   it('所有 match 都满足 slice(m.start, m.start + m.value.length) === m.value', () => {
-    const text = '甲方：北京示例科技有限公司，项目编号：SAMPLE-CT-002，电话：13800000000';
+    const text = '甲方：北京示例科技有限公司，项目编号：SAMPLE-A-001，电话：13800000000';
     const result = finder.findSensitiveContent(text);
     expect(result.matches.length).toBeGreaterThan(0);
     result.matches.forEach((m, i) => {

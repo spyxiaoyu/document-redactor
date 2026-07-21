@@ -22,7 +22,7 @@ import { Desensitizer } from '@/engines/Desensitizer';
 import { CryptoManager } from '@/engines/CryptoManager';
 import { generateDisplayToken } from '@/utils';
 
-const SRC = '<repo-path>/模板/SAMPLE-CT-002-知识产权服务框架协议-SAMPLE-CO-Z.docx';
+const SRC = 'test-fixtures/sample-contract-A.docx';
 
 function toArrayBuffer(buf: Uint8Array): ArrayBuffer {
   const ab = new ArrayBuffer(buf.byteLength);
@@ -168,7 +168,7 @@ describe('ZWS 下划线方案：spy 真实 docx e2e 验证', () => {
     expect(generateDisplayToken('占位人', 0)).toBe('__\u200B');
     expect(generateDisplayToken('占位人', 1)).toBe('__\u200B\u200B');
     // 视觉 strip ZWS 后是纯下划线
-    expect(generateDisplayToken('SAMPLE-CO-F（北京）融媒体科技文化有限公司', 5).replace(/\u200B/g, '')).toBe('_'.repeat(18));
+    expect(generateDisplayToken('示例公司（北京）融媒体科技文化有限公司', 5).replace(/\u200B/g, '')).toBe('_'.repeat(18));
     // 空字符串：visible 部分为空，但仍有 ZWS marker（保证 uniqueness）
     expect(generateDisplayToken('', 0)).toBe('\u200B');
   });

@@ -7,7 +7,7 @@ import fs from 'fs';
 import { writeDocxFromEdits } from '../docxZipWriter';
 import { readDocxFromArrayBuffer } from '../docxZipReader';
 
-const SRC = '<repo-path>/模板/SAMPLE-CT-002-知识产权服务框架协议-SAMPLE-CO-Z.docx';
+const SRC = 'test-fixtures/sample-contract-A.docx';
 
 function toArrayBuffer(buf: Uint8Array): ArrayBuffer {
   const ab = new ArrayBuffer(buf.byteLength);
@@ -30,11 +30,11 @@ describe('B2: writeDocxFromEdits round-trip preserves zip structure', () => {
 
     // 模拟一组"加密"了的字段（用短 token 替换原值）
     const edits = [
-      { maskedToken: '[COMPANY_0001]', originalValue: 'SAMPLE-CO-F（北京）融媒体科技文化有限公司' },
+      { maskedToken: '[COMPANY_0001]', originalValue: '示例公司（北京）融媒体科技文化有限公司' },
       { maskedToken: '[NAME_0003]', originalValue: '占位人' },
       { maskedToken: '[PHONE_0004]', originalValue: '13800000000' },
       { maskedToken: '[EMAIL_0005]', originalValue: 'contact@client-b.test' },
-      { maskedToken: '[COMPANY_0006]', originalValue: '北京SAMPLE-CO-Z有限公司' },
+      { maskedToken: '[COMPANY_0006]', originalValue: '北京示例科技有限公司' },
     ];
 
     // Step 1: 先做"加密"——把原值替换为短 token，写新 zip

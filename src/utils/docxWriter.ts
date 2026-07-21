@@ -331,7 +331,7 @@ function replaceSingleNode(
  * 等段落级 sibling 元素。这些元素**不是 <w:r> 的子元素**，是 <w:p> 的直接子元素
  * （OOXML 规范要求）。
  *
- * spy 真实 docx 50KB SAMPLE-CO-Z合同里 "SAMPLE-CO-F（北京）融媒体科技文化有限公司" 跨 3 个
+ * spy 真实 docx 50KB 测试科技合同里 "示例公司（北京）融媒体科技文化有限公司" 跨 3 个
  * <w:r>，中间夹 2 个 <w:proofErr/>。mergeRunsForCoverage 把区间内的 proofErr 一起删了，
  * Word/WPS 重新分词时把"run 边界突变 + proofErr 消失"理解为重新换行点 → 截图里的
  * "提行不连贯、影响阅读"。

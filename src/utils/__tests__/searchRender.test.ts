@@ -110,25 +110,25 @@ function slicePartsForSearchHits(
 }
 
 describe('renderHighlightParts: search hit 渲染行为锁定 (#5/#6)', () => {
-  const rawText = '甲方：SAMPLE-CO-F文化有限公司';
+  const rawText = '甲方：示例文化有限公司';
   // COMPANY 规则: start=3, end=16
   const companyMatch: SensitiveMatch = {
     id: 'auto-co', type: 'COMPANY', value: rawText.slice(3, 16), start: 3, end: 16, confidence: 0.9, context: '',
   };
 
   it('#5: hit 完全在 match 内部 → 必须生成 mark-in-match slice (含 hit index)', () => {
-    // 搜 "就娱" (5, 7) — 完全在 COMPANY [3, 16) 内部
-    const hits: SearchHit[] = [{ index: 0, start: 5, end: 7, value: '就娱', contextBefore: '', contextAfter: '' }];
+    // 搜 "司娱" (5, 7) — 完全在 COMPANY [3, 14) 内部
+    const hits: SearchHit[] = [{ index: 0, start: 5, end: 7, value: '司娱', contextBefore: '', contextAfter: '' }];
     const slices = slicePartsForSearchHits(rawText, [companyMatch], new Set(['auto-co']), hits);
     // 关键 spec: 旧逻辑下整个 match part 不切碎 → 没有 mark slice → jump no-op
     // 新逻辑：match 段被切碎，至少有一个 mark-in-match slice 带 searchHitIndex
     const marks = slices.filter(s => s.kind === 'mark-in-match' && s.searchHitIndex === 0);
     expect(marks.length).toBe(1);
-    expect(marks[0].text).toBe('就娱');
+    expect(marks[0].text).toBe('司娱');
   });
 
   it('#5: hit 完全在 match 内部 → 整段切碎后总长度 = 原文', () => {
-    const hits: SearchHit[] = [{ index: 0, start: 5, end: 7, value: '就娱', contextBefore: '', contextAfter: '' }];
+    const hits: SearchHit[] = [{ index: 0, start: 5, end: 7, value: '司娱', contextBefore: '', contextAfter: '' }];
     const slices = slicePartsForSearchHits(rawText, [companyMatch], new Set(['auto-co']), hits);
     const joined = slices.map(s => s.text).join('');
     expect(joined).toBe(rawText);
@@ -167,13 +167,13 @@ describe('renderHighlightParts: search hit 渲染行为锁定 (#5/#6)', () => {
   });
 
   it('#5: 多 hit 在同一 match 内 → 所有 hit index 都出现在 mark slice 树里', () => {
-    // raw: SAMPLE-CO-F文化 (7 chars)
+    // raw: 示例文化 (7 chars)
     // match [0, 7) = 整段
     // hit 1 [0, 2) = 众成
     // hit 2 [2, 4) = 就娱
     // hit 3 [5, 7) = 传媒
     // （旧版 match.end=8 越界 text.length=7，visibleHits 把 hit[6,8) filter 掉——allIndices 少 1）
-    const text4 = 'SAMPLE-CO-F文化';
+    const text4 = '示例文化';
     const match4: SensitiveMatch = {
       id: 'auto-co4', type: 'COMPANY', value: text4, start: 0, end: 7, confidence: 0.9, context: '',
     };

@@ -12,7 +12,7 @@ import {
 } from '../docxZipReader';
 import mammoth from 'mammoth';
 
-const SRC = '<repo-path>/模板/SAMPLE-CT-002-知识产权服务框架协议-SAMPLE-CO-Z.docx';
+const SRC = 'test-fixtures/sample-contract-A.docx';
 
 function toArrayBuffer(buf: Uint8Array): ArrayBuffer {
   const ab = new ArrayBuffer(buf.byteLength);
@@ -68,7 +68,7 @@ describe('B0: DocxZipReader prototype on user real docx', () => {
     // 我们现在还没把脱敏文本写回原 docx（那是 B1-B2 的事），所以这里反过来验：
     //
     //   现在的 UploadPage.buildDesensitizedDocx 用 mammoth extractRawText 把 docx → text，
-    //   那段 text 里敏感字段值（如"SAMPLE-CO-F（北京）融媒体科技文化有限公司"）就是连续的完整字符串。
+    //   那段 text 里敏感字段值（如"示例公司（北京）融媒体科技文化有限公司"）就是连续的完整字符串。
     //   我们用 SensitiveFinder 在这段 text 上找出 8 个核心敏感字段的 originalValue，
     //   然后去 docxZipReader 读出的原 docx w:t 拼接里找这些 originalValue，
     //   看它们是不是每个都整段落在一个 w:t 节点里。
@@ -82,11 +82,11 @@ describe('B0: DocxZipReader prototype on user real docx', () => {
 
     // 用 8 个 spy 已确认的字段值做核心验证
     const targets = [
-      'SAMPLE-CO-F（北京）融媒体科技文化有限公司',
+      '示例公司（北京）融媒体科技文化有限公司',
       '占位人',
       '13800000000',
       'contact@client-b.test',
-      '北京SAMPLE-CO-Z有限公司',
+      '北京示例科技有限公司',
       '张某某',
       '13800000001',
       'contact@client-a.test',

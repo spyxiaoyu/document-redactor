@@ -8,7 +8,7 @@ import { CryptoManager } from '../CryptoManager';
 import { Desensitizer } from '../Desensitizer';
 import { SensitiveFinder } from '../SensitiveFinder';
 
-const SRC = '<repo-path>/模板/SAMPLE-CT-002-知识产权服务框架协议-SAMPLE-CO-Z.docx';
+const SRC = 'test-fixtures/sample-contract-A.docx';
 const PASSWORD = 'test123';
 
 function toArrayBuffer(buf: Uint8Array): ArrayBuffer {
@@ -35,8 +35,8 @@ describe('E2E with real DOCX + real default rules', () => {
 
     // 用 SensitiveFinder 默认实例（构造函数已 setRules(createRulesFromBuiltin())）
     const finder = new SensitiveFinder();
-    // 模拟用户添加了手动 keyword：比如"SAMPLE-CO-F"或"SAMPLE-CO-Y"
-    finder.addKeywords(['SAMPLE-CO-F', 'SAMPLE-CO-Y']);
+    // 模拟用户添加了手动 keyword：比如"辛公司"或"测试科技"
+    finder.addKeywords(['辛公司', '测试科技']);
     const detect = finder.findSensitiveContent(originalText, { includeDisabled: true });
     const matches = detect.matches;
     console.log(`  SensitiveFinder 找到 ${matches.length} 个 match (rules + keywords)`);

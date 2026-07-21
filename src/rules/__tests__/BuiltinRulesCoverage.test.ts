@@ -7,7 +7,7 @@ import mammoth from 'mammoth';
 import { SensitiveFinder } from '@/engines/SensitiveFinder';
 import { BUILTIN_RULES } from '../BuiltinRules';
 
-const SRC = '<repo-path>/模板/SAMPLE-CT-002-知识产权服务框架协议-SAMPLE-CO-Z.docx';
+const SRC = 'test-fixtures/sample-contract-A.docx';
 
 function toArrayBuffer(buf: Uint8Array): ArrayBuffer {
   const ab = new ArrayBuffer(buf.byteLength);
@@ -52,11 +52,11 @@ describe('BuiltinRules coverage on user real docx', () => {
 
     // 用户期望的 8 个核心字段
     const expected = [
-      ['SAMPLE-CO-F（北京）融媒体科技文化有限公司', 'COMPANY'],
+      ['示例公司（北京）融媒体科技文化有限公司', 'COMPANY'],
       ['占位人', 'NAME'],
       ['13800000000', 'PHONE'],
       ['contact@client-b.test', 'EMAIL'],
-      ['北京SAMPLE-CO-Z有限公司', 'COMPANY'],
+      ['北京示例科技有限公司', 'COMPANY'],
       ['张某某', 'NAME'],
       ['13800000001', 'PHONE'],
       ['contact@client-a.test', 'EMAIL'],

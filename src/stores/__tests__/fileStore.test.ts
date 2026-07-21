@@ -2,7 +2,7 @@
  * fileStore.addManualMatch 重叠去重逻辑回归测试。
  *
  * Spy 现场 bug（commit `ddcd883` follow-up）：
- *   spy 在方太合同里取消 ADDRESS 高亮后，用搜索框 addManualMatch 同一段
+ *   spy 在甲乙合同里取消 ADDRESS 高亮后，用搜索框 addManualMatch 同一段
  *   "上海市黄浦区示例路1号示例大厦"。
  *
  *   旧逻辑只 push 新 CUSTOM match，老 ADDRESS 仍保留 → 两 match 完全重叠。
@@ -16,8 +16,8 @@ import { useFileStore } from '../fileStore';
 import type { SensitiveMatch } from '@/types';
 import { buildHighlightParts } from '@/utils/highlight';
 
-// Spy 方太合同 rawText 节选（3020 chars 里的"联系地址"段前后）
-const RAW_TEXT = '甲方：SAMPLE-CO-F文化有限公司上海分公司\n\n联系人：占位人\n\n联系地址：上海市黄浦区示例路1号示例大厦 \n\n（注：请勿填写公司注册地址）\n\n联系电话：13800000000';
+// Spy 甲乙合同 rawText 节选（3020 chars 里的"联系地址"段前后）
+const RAW_TEXT = '甲方：示例文化有限公司上海分公司\n\n联系人：占位人\n\n联系地址：上海市黄浦区示例路1号示例大厦 \n\n（注：请勿填写公司注册地址）\n\n联系电话：13800000000';
 
 function mkMatch(id: string, type: SensitiveMatch['type'], value: string, start: number): SensitiveMatch {
   return {
@@ -107,12 +107,12 @@ describe('fileStore.addManualMatch: 重叠老 match 必须删除', () => {
   });
 
   it('完全包含：老 match 是新 match 的子串，老 match 被删', () => {
-    const subOld = mkMatch('auto-sub', 'COMPANY', 'SAMPLE-CO-F文化', 3);  // 0..7 in "甲方：SAMPLE-CO-F..."
+    const subOld = mkMatch('auto-sub', 'COMPANY', '示例文化', 3);  // 0..7 in "甲方：辛公司..."
     // 实际 start=3, end=10
     seedStore(RAW_TEXT, [subOld]);
 
-    // 手动添加 "SAMPLE-CO-F文化有限公司上海分公司"（包含子串）
-    const text = 'SAMPLE-CO-F文化有限公司上海分公司';
+    // 手动添加 "示例文化有限公司上海分公司"（包含子串）
+    const text = '示例文化有限公司上海分公司';
     const idx = RAW_TEXT.indexOf(text);
     expect(idx).toBe(3);
     useFileStore.getState().addManualMatch(text);
@@ -123,10 +123,10 @@ describe('fileStore.addManualMatch: 重叠老 match 必须删除', () => {
   });
 
   it('部分重叠：老 match 部分覆盖新 match，老 match 被删', () => {
-    const partial = mkMatch('auto-partial', 'COMPANY', 'SAMPLE-CO-F', 3);  // 0..3
+    const partial = mkMatch('auto-partial', 'COMPANY', '辛公司', 3);  // 0..3
     seedStore(RAW_TEXT, [partial]);
 
-    const text = 'SAMPLE-CO-F文化有限公司';  // 3..12
+    const text = '示例文化有限公司';  // 3..12
     useFileStore.getState().addManualMatch(text);
 
     const state = useFileStore.getState();

@@ -58,7 +58,7 @@ describe('Desensitizer.restore — position-based (the second bug)', () => {
     // Simulate the user's exact broken pattern: company name (18) + "_" (1) = 19 chars replacing email (19 chars)
     const desensitizedText = '_'.repeat(19);  // 19 underscores
     const mappingTable = [
-      entry('COMPANY', 'SAMPLE-CO-F（北京）融媒体科技文化有限公司', { start: 0, end: 18 }),
+      entry('COMPANY', '示例公司（北京）融媒体科技文化有限公司', { start: 0, end: 18 }),
       entry('COMPANY', '____', { start: 18, end: 19 }),  // 1-char leftover
     ];
 
@@ -66,7 +66,7 @@ describe('Desensitizer.restore — position-based (the second bug)', () => {
     // After position-based replace: company (18) + "____" (4) = 22 chars (not equal to original 19).
     // The 2nd entry's position is wrong in this contrived test, but the point is:
     //   position-based replace shouldn't introduce 5x repetition.
-    expect(restored).toContain('SAMPLE-CO-F');
+    expect(restored).toContain('辛公司');
   });
 
   it('full UploadPage-style pipeline: text + matches → desensitized underscores → restore', async () => {

@@ -11,7 +11,7 @@ import {
 } from '../docxZipReader';
 import { applyDocxEdits } from '../docxWriter';
 
-const SRC = '<repo-path>/模板/SAMPLE-CT-002-知识产权服务框架协议-SAMPLE-CO-Z.docx';
+const SRC = 'test-fixtures/sample-contract-A.docx';
 
 function toArrayBuffer(buf: Uint8Array): ArrayBuffer {
   const ab = new ArrayBuffer(buf.byteLength);
@@ -31,10 +31,10 @@ describe('B1: applyDocxEdits on user real docx', () => {
   });
 
   it('scenario B: cross-w:r replacement (the 17-char company name case)', () => {
-    // 模拟 mammoth 输出里的"SAMPLE-CO-F（北京）融媒体科技文化有限公司"拆成两个 w:r
-    const xml = `<w:p><w:r><w:rPr><w:rFonts w:ascii="微软雅黑" w:eastAsia="微软雅黑"/><w:b/></w:rPr><w:t>SAMPLE-CO-F（北京）</w:t></w:r><w:proofErr w:type="gramStart"/><w:r><w:rPr><w:rFonts w:ascii="微软雅黑" w:eastAsia="微软雅黑"/><w:b/></w:rPr><w:t>融媒体科技文化有限公司</w:t></w:r></w:p>`;
+    // 模拟 mammoth 输出里的"示例公司（北京）融媒体科技文化有限公司"拆成两个 w:r
+    const xml = `<w:p><w:r><w:rPr><w:rFonts w:ascii="微软雅黑" w:eastAsia="微软雅黑"/><w:b/></w:rPr><w:t>辛公司（北京）</w:t></w:r><w:proofErr w:type="gramStart"/><w:r><w:rPr><w:rFonts w:ascii="微软雅黑" w:eastAsia="微软雅黑"/><w:b/></w:rPr><w:t>融媒体科技文化有限公司</w:t></w:r></w:p>`;
     const out = applyDocxEdits(xml, [
-      { maskedToken: 'TOKEN_COMPANY_LONG_001', originalValue: 'SAMPLE-CO-F（北京）融媒体科技文化有限公司' },
+      { maskedToken: 'TOKEN_COMPANY_LONG_001', originalValue: '示例公司（北京）融媒体科技文化有限公司' },
     ]);
     // 验证替换后还应该包含原值（虽然 token 没真实出现，是被构造的）。我们改成现实 token：
     expect(out).toContain('<w:p>');
@@ -86,11 +86,11 @@ describe('B1: applyDocxEdits on user real docx', () => {
     //   - 用 applyDocxEdits 反向还原
     //   - 验证 XML 仍 well-formed + 8 个字段值完整出现
     const fields: Array<{ value: string; token: string }> = [
-      { value: 'SAMPLE-CO-F（北京）融媒体科技文化有限公司', token: '[COMPANY_0001]' },
+      { value: '示例公司（北京）融媒体科技文化有限公司', token: '[COMPANY_0001]' },
       { value: '占位人', token: '[NAME_0003]' },
       { value: '13800000000', token: '[PHONE_0004]' },
       { value: 'contact@client-b.test', token: '[EMAIL_0005]' },
-      { value: '北京SAMPLE-CO-Z有限公司', token: '[COMPANY_0006]' },
+      { value: '北京示例科技有限公司', token: '[COMPANY_0006]' },
       { value: '张某某', token: '[NAME_0007]' },
       { value: '13800000001', token: '[PHONE_0008]' },
       { value: 'contact@client-a.test', token: '[EMAIL_0009]' },
@@ -151,7 +151,7 @@ describe('B1: applyDocxEdits on user real docx', () => {
       { maskedToken: '___________', originalValue: '13800000000' }, // 甲方电话
       { maskedToken: '__', originalValue: '张某某' },         // 乙方代表
       { maskedToken: '___________', originalValue: '13800000001' }, // 乙方电话
-      { maskedToken: '__________', originalValue: '北京SAMPLE-CO-Y' },     // 乙方公司
+      { maskedToken: '__________', originalValue: '北京测试科技' },     // 乙方公司
     ];
 
     const out = applyDocxEdits(xml, edits);
@@ -164,7 +164,7 @@ describe('B1: applyDocxEdits on user real docx', () => {
     expect(out).toContain('乙方代表：张某某');
     expect(out).toContain('电话：13800000000');
     expect(out).toContain('电话：13800000001');
-    expect(out).toContain('乙方：北京SAMPLE-CO-Y');
+    expect(out).toContain('乙方：北京测试科技');
 
     // 验证：下划线全部消失
     expect(out).not.toMatch(/_{2,}/);
@@ -174,7 +174,7 @@ describe('B1: applyDocxEdits on user real docx', () => {
   });
 
   it('B6: same-length + same-originalValue (dedup case, replaceAll behavior)', () => {
-    // 同一敏感字段在 docx 出现多次（如"北京SAMPLE-CO-Z有限公司"在合同里出现 3 次）
+    // 同一敏感字段在 docx 出现多次（如"北京示例科技有限公司"在合同里出现 3 次）
     // edits 应该只有一个 entry（caller 去重），applyDocxEdits 走 replaceAll 路径
     const xml = `<w:body>
       <w:p><w:r><w:t>甲方：__________________</w:t></w:r></w:p>
@@ -182,10 +182,10 @@ describe('B1: applyDocxEdits on user real docx', () => {
       <w:p><w:r><w:t>丙方：__________________</w:t></w:r></w:p>
     </w:body>`;
     const edits = [
-      { maskedToken: '__________________', originalValue: '北京SAMPLE-CO-Z有限公司' },
+      { maskedToken: '__________________', originalValue: '北京示例科技有限公司' },
     ];
     const out = applyDocxEdits(xml, edits);
-    const count = (out.match(/北京SAMPLE-CO-Z有限公司/g) || []).length;
+    const count = (out.match(/北京示例科技有限公司/g) || []).length;
     console.log(`\n=== B6 dedup 输出 ===\n${out}\n  count=${count}`);
     expect(out).not.toMatch(/_{5,}/);
     expect(count).toBe(3);

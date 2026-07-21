@@ -96,24 +96,24 @@ describe('Restore InsDel Preservation — applyDocxEdits 不能破坏 <w:ins>/<w
   it('scenario 4: 完整对照 spy 第21段结构 (mask + restore 循环)', () => {
     // spy 第21段真实结构片段（精简版）
     // 含 <w:r> + <w:del><w:r><w:delText>作者</w:delText></w:r></w:del> + <w:ins><w:r><w:t>设计师</w:t></w:r></w:ins> + <w:r>
-    const origXml = `<w:p><w:r><w:rPr><w:rFonts w:ascii="宋体"/></w:rPr><w:t>甲方（SAMPLE-CO-E公司），承诺与</w:t></w:r><w:del w:id="2" w:author="spy" w:date="2022-08-19T13:58:02Z"><w:r><w:rPr/><w:delText>作者</w:delText></w:r></w:del><w:ins w:id="3" w:author="spy" w:date="2022-08-19T13:58:05Z"><w:r><w:rPr/><w:t>设计师</w:t></w:r></w:ins><w:r><w:rPr><w:rFonts w:ascii="宋体"/></w:rPr><w:t>履行义务</w:t></w:r></w:p>`;
+    const origXml = `<w:p><w:r><w:rPr><w:rFonts w:ascii="宋体"/></w:rPr><w:t>甲方（甲集团公司），承诺与</w:t></w:r><w:del w:id="2" w:author="spy" w:date="2022-08-19T13:58:02Z"><w:r><w:rPr/><w:delText>作者</w:delText></w:r></w:del><w:ins w:id="3" w:author="spy" w:date="2022-08-19T13:58:05Z"><w:r><w:rPr/><w:t>设计师</w:t></w:r></w:ins><w:r><w:rPr><w:rFonts w:ascii="宋体"/></w:rPr><w:t>履行义务</w:t></w:r></w:p>`;
 
     const origInsCount = (origXml.match(/<w:ins/g) || []).length;
     const origDelCount = (origXml.match(/<w:del/g) || []).length;
     const origDelTextCount = (origXml.match(/<w:delText/g) || []).length;
 
-    // mask: 把 "SAMPLE-CO-E公司" 替换为 mask token
+    // mask: 把 "甲集团公司" 替换为 mask token
     const maskedXml = applyDocxEdits(origXml, [
-      { maskedToken: 'SAMPLE-CO-E公司', originalValue: '____' + '' },
+      { maskedToken: '甲集团公司', originalValue: '____' + '' },
     ]);
 
     expect((maskedXml.match(/<w:ins/g) || []).length).toBe(origInsCount);
     expect((maskedXml.match(/<w:del/g) || []).length).toBe(origDelCount);
     expect((maskedXml.match(/<w:delText/g) || []).length).toBe(origDelTextCount);
 
-    // restore: 把 ____ + ZWS 替换回 "SAMPLE-CO-E公司"
+    // restore: 把 ____ + ZWS 替换回 "甲集团公司"
     const restoredXml = applyDocxEdits(maskedXml, [
-      { maskedToken: '____' + '', originalValue: 'SAMPLE-CO-E公司' },
+      { maskedToken: '____' + '', originalValue: '甲集团公司' },
     ]);
 
     // 关键断言：restore 后 ins/del/delText 数必须仍然等于原始
@@ -122,7 +122,7 @@ describe('Restore InsDel Preservation — applyDocxEdits 不能破坏 <w:ins>/<w
     expect((restoredXml.match(/<w:delText/g) || []).length).toBe(origDelTextCount);
 
     // 文字必须恢复
-    expect(restoredXml).toContain('SAMPLE-CO-E公司');
+    expect(restoredXml).toContain('甲集团公司');
     expect(restoredXml).toContain('<w:delText>作者</w:delText>');
     expect(restoredXml).toContain('<w:t>设计师</w:t>');
 

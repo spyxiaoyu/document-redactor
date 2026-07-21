@@ -187,7 +187,7 @@ describe('SPEC-B3-03: mark.onClick 阻止冒泡到 match.onClick', () => {
     const markClick = vi.fn();
 
     // 构造 click 事件，jsdom 原生支持
-    const text = 'SAMPLE-CO-F文化';  // 7 chars, match [0, 7)
+    const text = '示例文化';  // 7 chars, match [0, 7)
     const match: SensitiveMatch = {
       id: 'm1', type: 'COMPANY', value: text, start: 0, end: 7, confidence: 0.9, context: '',
     };

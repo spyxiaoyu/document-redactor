@@ -4,10 +4,10 @@
  * 区别于前面的 RealDocxFPAudit：那是数据**报告**（列全 matches），这个是 probe 测试（断言期望）
  *
  * spy "为什么不去找真合同？要选模板扫" 反馈后切换路径——
- * <repo-path>/work/ 下 3891 个真合同（zcool/炜衡律所/SAMPLE-CO-F）
+ * test-fixtures/file/work/ 下大量真合同（占位代号）
  * 暴露模板根本不会出现 / 容易被模板掩盖的 bug：
  *
- * 【P0 USCC 银行抢匹配】SAMPLE-CO-D/茅台/习酒等大客户真合同反复出现的"统一社会信用代码：91..."
+ * 【P0 USCC 银行抢匹配】测试牌/丙丁/戊己等大客户真合同反复出现的"统一社会信用代码：91..."
  *   原 TAX_ID regex label alt 没有"统一社会信用代码"
  *   → 18位 USCC 完全不识别；
  *   mammoth 拼接常丢尾部字母校验码（如 91440101567914858A → 91440101567914858）
@@ -41,12 +41,12 @@ function buildFinder(): SensitiveFinder {
   return finder;
 }
 
-describe('第七批 spy 真合同 audit — 4 类 bug probe（RED 先行）', () => {
+describe('第七批 spy real-contract audit — 4 类 bug probe（RED 先行）', () => {
   // ==================== P0 USCC 银行抢匹配 ====================
-  describe('P0 USCC 18位被 BANK_CARD 抢匹配（SAMPLE-CO-D/茅台真合同反复出现）', () => {
+  describe('P0 USCC 18位被 BANK_CARD 抢匹配（测试牌/丙丁真合同反复出现）', () => {
     it('case P0-1: "统一社会信用代码：91440101567914858A" 18位应识别 TAX_ID', () => {
-      // SAMPLE-CO-D补充协议真合同原文
-      const text = '甲方：SAMPLE-CO-D（中国）有限公司（统一社会信用代码：91440101567914858A，以下简称"甲方"）';
+      // 测试牌补充协议真合同原文
+      const text = '甲方：测试牌（中国）有限公司（统一社会信用代码：91440101567914858A，以下简称"甲方"）';
       const finder = buildFinder();
       const result = finder.findSensitiveContent(text);
       const taxIds = result.matches.filter(m => m.type === 'TAX_ID').map(m => m.value);
@@ -57,8 +57,8 @@ describe('第七批 spy 真合同 audit — 4 类 bug probe（RED 先行）', ()
       expect(banks).not.toContain('91440101567914858');  // mammoth 丢字母 17 位也不应误吞
     });
 
-    it('case P0-2: 习酒合同 18位 USCC 完整（带 P 校验码）', () => {
-      const text = '公司名称：贵州习酒股份有限公司 纳税人识别号：91520300215032800P 单位地址：...';
+    it('case P0-2: 戊己合同 18位 USCC 完整（带 P 校验码）', () => {
+      const text = '公司名称：贵州戊己股份有限公司 纳税人识别号：91520300215032800P 单位地址：...';
       const finder = buildFinder();
       const result = finder.findSensitiveContent(text);
       const taxIds = result.matches.filter(m => m.type === 'TAX_ID').map(m => m.value);
@@ -81,7 +81,7 @@ describe('第七批 spy 真合同 audit — 4 类 bug probe（RED 先行）', ()
   // ==================== P1 固话漏识别 ====================
   describe('P1 固话漏识别（真合同反复出现）', () => {
     it('case P1-1: 010 开头 11 位固话应识别 PHONE', () => {
-      // 茅台合同"01000000000" 11 位以 0 开头
+      // 丙丁合同"01000000000" 11 位以 0 开头
       const text = '公司地址：北京市顺义区牛栏山镇府前街9号  电话：01000000000';
       const finder = buildFinder();
       const result = finder.findSensitiveContent(text);
@@ -91,8 +91,8 @@ describe('第七批 spy 真合同 audit — 4 类 bug probe（RED 先行）', ()
     });
 
     it('case P1-2: 区号-号码 "08510000000" 应识别 PHONE', () => {
-      // 习酒合同"0851-2..."区号固话
-      const text = '贵州习酒股份有限公司电话号码：08510000000';
+      // 戊己合同"0851-2..."区号固话
+      const text = '贵州戊己股份有限公司电话号码：08510000000';
       const finder = buildFinder();
       const result = finder.findSensitiveContent(text);
       const phones = result.matches.filter(m => m.type === 'PHONE').map(m => m.value);
@@ -154,7 +154,7 @@ describe('第七批 spy 真合同 audit — 4 类 bug probe（RED 先行）', ()
   describe('P3 叙述短语误识别 COMPANY', () => {
     it('case P3-1: "连续多年获得中央电视台十佳广告代理公司" 描述短语应拒', () => {
       // 生态城管委会合同原文
-      const text = 'SAMPLE-CO-F…连续多年获得中央电视台十佳广告代理公司称号';
+      const text = '辛公司…连续多年获得中央电视台十佳广告代理公司称号';
       const finder = buildFinder();
       const result = finder.findSensitiveContent(text);
       const companies = result.matches.filter(m => m.type === 'COMPANY').map(m => m.value);
@@ -208,7 +208,7 @@ describe('第七批 spy 真合同 audit — 4 类 bug probe（RED 先行）', ()
     });
 
     it('case P4-3: 17 位纯数字 USCC（mammoth 拼丢尾部字母 + 无 label）不应识别为 BANK_CARD', () => {
-      // SAMPLE-CO-D合同"统一社会信用代码：91440101567914858A" 尾部 A 丢了 → 17 位纯数字
+      // 测试牌合同"统一社会信用代码：91440101567914858A" 尾部 A 丢了 → 17 位纯数字
       // 关键场景：USCC 出现在无 label 上下文（mammoth 拼接丢标签）+ 17 位数字
       // 不能依赖 TAX_ID 抢匹配 — TAX_ID 必须有 label 才匹配；纯数字 17 位应被 BANK_CARD post-filter 直接拒
       const text = '甲方开户：91440101567914858 乙方开户：某支行 0200025609200013713';
@@ -223,7 +223,7 @@ describe('第七批 spy 真合同 audit — 4 类 bug probe（RED 先行）', ()
     });
 
     it('case P4-4 (回归): 真实银行账号 19 位应保留', () => {
-      // 习酒合同"银行账号：23380001040000208" 是 17 位农业银行内部分行短账号（真）
+      // 戊己合同"银行账号：23380001040000208" 是 17 位农业银行内部分行短账号（真）
       // 这里验证：post-filter 不应误伤所有 17 位数字 — 只针对 USCC 形态（91/92/93 开头且 ≤18 位）
       const text = '中国农业银行股份有限公司习水二郎庙支行 银行账号：23380001040000208';
       const finder = buildFinder();
@@ -244,8 +244,8 @@ describe('第七批 spy 真合同 audit — 4 类 bug probe（RED 先行）', ()
     });
   });
 
-  // ==================== P5 NAME 中段漏识别（习酒真合同）====================
-  describe('P5 NAME 中段 label "项目负责人" 漏识别（习酒合同反复出现）', () => {
+  // ==================== P5 NAME 中段漏识别（戊己真合同）====================
+  describe('P5 NAME 中段 label "项目负责人" 漏识别（戊己合同反复出现）', () => {
     it('case P5-1: "项目负责人为蔡明衡" → 应识别 NAME "蔡明衡"', () => {
       const text = '甲方项目负责人为蔡明衡，负责本项目的整体推进';
       const finder = buildFinder();
@@ -266,9 +266,9 @@ describe('第七批 spy 真合同 audit — 4 类 bug probe（RED 先行）', ()
   });
 
   // ==================== P6 BANK_CARD 21位账号被 regex 截 19 位（真合同反复出现）====================
-  describe('P6 BANK_CARD 21位美元/欧元外币账号被 regex 上限截断（CTR 合同反复出现）', () => {
+  describe('P6 BANK_CARD 21位美元/欧元外币账号被 regex 上限截断（DEF组 contract反复出现）', () => {
     it('case P6-1: "美元账号：110060437146100000175" 21 位 → 应完整识别', () => {
-      // CTR 合同美元账号真合同反复出现 — 21 位
+      // DEF组 contract美元账号真合同反复出现 — 21 位
       // regex 当前 \d{3,6} 截 19 位，丢末尾 2 位 "75"
       const text = '美元账号：110060437146100000175';
       const finder = buildFinder();
@@ -370,28 +370,28 @@ describe('第七批 spy 真合同 audit — 4 类 bug probe（RED 先行）', ()
   });
 
   // ==================== P10/P10b COMPANY 叙述前缀 + 括号断裂 FP ====================
-  describe('P10/P10b COMPANY 合同叙述前缀 + 括号断裂 FP（CMBC/副本SAMPLE-CO-E海洛长协真实合同）', () => {
-    it('case P10: "本合作协议由北京SAMPLE-CO-E网络科技有限公司..." → 切"本合作协议由"剩真公司', () => {
-      // 副本SAMPLE-CO-E海洛长协真合同原文
-      const text = '本合作协议由北京SAMPLE-CO-E网络科技有限公司（下称"SAMPLE-CO-E网"）';
+  describe('P10/P10b COMPANY 合同叙述前缀 + 括号断裂 FP（CMBC/副本甲集团海洛长协真实合同）', () => {
+    it('case P10: "本合作协议由北京甲集团网络科技有限公司..." → 切"本合作协议由"剩真公司', () => {
+      // 副本甲集团海洛长协真合同原文
+      const text = '本合作协议由北京甲集团网络科技有限公司（下称"甲集团网"）';
       const finder = buildFinder();
       const result = finder.findSensitiveContent(text);
       const companies = result.matches.filter(m => m.type === 'COMPANY').map(m => m.value);
       console.log(`\n[case P10] companies=${JSON.stringify(companies)}`);
       expect(companies.some(m => m.startsWith('本合作协议由'))).toBe(false);
-      expect(companies).toContain('北京SAMPLE-CO-E网络科技有限公司');
+      expect(companies).toContain('北京甲集团网络科技有限公司');
     });
 
-    it('case P10b: "收款单位（公司全称）：北京SAMPLE-CO-E教育科技有限公司..." → 断裂 FP 应拒', () => {
-      // CMBC 合同"收款单位（公司全称）：北京SAMPLE-CO-E教育科技有限公司" mammoth 拼接丢内容
+    it('case P10b: "收款单位（公司全称）：北京甲集团教育科技有限公司..." → 断裂 FP 应拒', () => {
+      // CMBC 合同"收款单位（公司全称）：北京甲集团教育科技有限公司" mammoth 拼接丢内容
       // → COMPANY regex 匹配到 "收款单位（公司" 4 hanChars + form
-      const text = '收款单位（公司全称）：北京SAMPLE-CO-E教育科技有限公司';
+      const text = '收款单位（公司全称）：北京甲集团教育科技有限公司';
       const finder = buildFinder();
       const result = finder.findSensitiveContent(text);
       const companies = result.matches.filter(m => m.type === 'COMPANY').map(m => m.value);
       console.log(`\n[case P10b] companies=${JSON.stringify(companies)}`);
       expect(companies).not.toContain('收款单位（公司');
-      expect(companies).toContain('北京SAMPLE-CO-E教育科技有限公司');
+      expect(companies).toContain('北京甲集团教育科技有限公司');
     });
   });
 });

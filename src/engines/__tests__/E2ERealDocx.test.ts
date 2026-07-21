@@ -1,7 +1,7 @@
 /**
  * 真实 DOCX 端到端测试
  *
- * 用用户桌面真实文件 <repo-path>/模板/SAMPLE-CT-002-知识产权服务框架协议-SAMPLE-CO-Z.docx
+ * 用用户桌面真实文件 test-fixtures/sample-contract-A.docx
  * 跑完整 UploadPage → RestorePage 链路：
  *   1) mammoth 提取原文
  *   2) SensitiveFinder 找 match
@@ -24,7 +24,7 @@ import { CryptoManager } from '../CryptoManager';
 import { Desensitizer } from '../Desensitizer';
 import { SensitiveFinder } from '../SensitiveFinder';
 
-const SRC = '<repo-path>/模板/SAMPLE-CT-002-知识产权服务框架协议-SAMPLE-CO-Z.docx';
+const SRC = 'test-fixtures/sample-contract-A.docx';
 const PASSWORD = 'test123';
 
 // mammoth 在不同环境下用不同 unzip：
@@ -42,22 +42,19 @@ function mammothInput(buf: Uint8Array) {
 }
 
 // 从真实文件前 100 字看到：
-//   "SAMPLE-CT-004"   ← 合同号
-//   "SAMPLE-CO-F（北京）融媒体科技文化有限公司"   ← 公司名（带中文括号）
+//   "SAMPLE-CT-001"   ← 合同号
+//   "示例公司（北京）融媒体科技文化有限公司"   ← 公司名（带中文括号）
 // 我们直接对文档里能确认的字面量做 keyword 匹配，确保 100% 命中。
 const KNOWN_KEYWORDS = [
-  'SAMPLE-CO-F',
+  '辛公司',
   '融媒体',
-  'SAMPLE-CT-004',
+  'SAMPLE-CT-001',
   '北京示例',
-  'SAMPLE-CO-Y',
+  '测试科技',
 ];
 
 describe('E2E with real DOCX', () => {
-  it('runs full UploadPage→RestorePage round-trip and restores original text exactly', async () => {
-    if (!fs.existsSync(SRC)) {
-      throw new Error(`测试文件不存在: ${SRC}`);
-    }
+  it.runIf(fs.existsSync(SRC))('runs full UploadPage→RestorePage round-trip and restores original text exactly', async () => {
 
     // 1) 读源文件 + mammoth 提文本
     const srcBuffer = fs.readFileSync(SRC);

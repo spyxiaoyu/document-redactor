@@ -19,7 +19,7 @@ import { Desensitizer } from '@/engines/Desensitizer';
 import { CryptoManager } from '@/engines/CryptoManager';
 import { readDocxFromArrayBuffer } from '../docxZipReader';
 
-const SRC = '<repo-path>/模板/SAMPLE-CT-002-知识产权服务框架协议-SAMPLE-CO-Z.docx';
+const SRC = 'test-fixtures/sample-contract-A.docx';
 const PASSWORD = 'spy-verify-123';
 
 function toArrayBuffer(buf: Uint8Array): ArrayBuffer {

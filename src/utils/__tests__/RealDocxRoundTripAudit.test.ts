@@ -1,11 +1,11 @@
 import { describe, it, expect } from 'vitest';
-import { readFileSync, writeFileSync } from 'fs';
+import { existsSync, readFileSync, writeFileSync } from 'fs';
 import JSZip from 'jszip';
 
 describe('format-preservation real docx round-trip', () => {
-  it('SAMPLE-CO-Z docx: header/footer/table/style 应保留', async () => {
+  it.runIf(existsSync('test-fixtures/sample-contract-A.docx'))('测试科技 docx: header/footer/table/style 应保留', async () => {
     const { writeDocxFromEdits } = await import('@/utils/docxZipWriter');
-    const buf = readFileSync('<repo-path>/模板/SAMPLE-CT-002-知识产权服务框架协议-SAMPLE-CO-Z.docx');
+    const buf = readFileSync('test-fixtures/sample-contract-A.docx');
     // Node Buffer → ArrayBuffer: 用 Uint8Array 包一层（MEMORY 钉死的 Node 类型坑）
     const ab = new Uint8Array(buf).buffer;
 
@@ -46,13 +46,13 @@ describe('format-preservation real docx round-trip', () => {
     expect(outDoc).toContain('<w:tbl');
   });
 
-  it('方太 docx（3 张图）: word/media/ 图片应保留（媒体二进制不变）', async () => {
+  it.runIf(existsSync('test-fixtures/sample-contract-B.docx'))('甲乙 docx（3 张图）: word/media/ 图片应保留（媒体二进制不变）', async () => {
     const { writeDocxFromEdits } = await import('@/utils/docxZipWriter');
-    const buf = readFileSync('<repo-path>/模板/SAMPLE-CT-003&腾讯网剧植入合同（客户版）-final.docx');
+    const buf = readFileSync('test-fixtures/sample-contract-B.docx');
     const ab = new Uint8Array(buf).buffer;
 
     const out = await writeDocxFromEdits(ab, []);
-    writeFileSync('/tmp/docx_audit/fangtai_output.docx', new Uint8Array(out));
+    writeFileSync('/tmp/docx_audit/sample-B-output.docx', new Uint8Array(out));
 
     const origZip = await JSZip.loadAsync(ab);
     const outZip = await JSZip.loadAsync(out);

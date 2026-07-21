@@ -61,12 +61,12 @@ describe('SPEC-E2-02: ExcelParser', () => {
     it('多 sheet：所有 sheet 的内容都在 rawText 里', async () => {
       const f = makeXlsxFile('multi.xlsx', {
         Sheet1: [['甲方：北京示例科技有限公司']],
-        Sheet2: [['乙方：SAMPLE-CO-F文化有限公司']],
+        Sheet2: [['乙方：示例文化有限公司']],
         Sheet3: [['电话：13800000000']],
       });
       const result = await parser.parse(f);
       expect(result.rawText).toContain('示例');
-      expect(result.rawText).toContain('SAMPLE-CO-F');
+      expect(result.rawText).toContain('辛公司');
       expect(result.rawText).toContain('13800000000');
     });
 

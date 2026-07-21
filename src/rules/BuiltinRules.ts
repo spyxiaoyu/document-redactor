@@ -11,7 +11,7 @@ export interface BuiltinRuleDefinition {
 export const BUILTIN_RULES: BuiltinRuleDefinition[] = [
   {
     type: 'PHONE',
-    // v2 修复（spy 第七批真合同 audit — 茅台/习酒 "01000000000"/"08510000000" FN）：
+    // v2 修复（spy audit batch #7 — 丙丁/戊己 "01000000000"/"08510000000" FN）：
     //   原 regex 只接 1[3-9]\d{9} 11 位手机号，真合同桌面固话/服务热线（010/0XX-XXXXXXXX）全漏识别
     //   修法：top-level alternation 加固话格式 `0\d{2,4}[-.\s]?\d{7,8}`
     //     - "01000000000" (3-8) → 11 chars ✅
@@ -39,7 +39,7 @@ export const BUILTIN_RULES: BuiltinRuleDefinition[] = [
     // capture group 提取税号本体：[A-Z0-9]{15,20} 是 match[1]
     // SensitiveFinder.ts:69-72 会用 match[1] 作为 value，这样"纳税人识别号："作为 label 保留不脱敏
     //
-    // v2 修复（spy 6 docx audit — 三餐四季 [5018-5036] "纳税识别号：【913100007397870325】" FP）：
+    // v2 修复（spy 6-docx audit — 节目甲 [5018-5036] "纳税识别号：【913100007397870325】" FP）：
     //   - 原 regex label alt 只有"纳税人识别号"（6 字），不匹配文档常用简写"纳税识别号"（5 字）
     //   - 即使 label 改对，`[:：]?\s*` 也不允许中文 `【】（）()` 作分隔符
     //     → BANK_CARD 抢匹配把 18 位税号当银行卡（脱敏语义错位）
@@ -48,7 +48,7 @@ export const BUILTIN_RULES: BuiltinRuleDefinition[] = [
     //     2. label 和 capture group 之间允许 `[（(【]?\s*` / `\s*[)）]?` 中文括号分隔符
     //   - 规则位置从 list 末尾上移至 BANK_CARD 之前，使 TAX_ID 先入 matches array
     //     mergeOverlappingValueAware 同范围保留先入 → TAX_ID 优先于 BANK_CARD
-    // v3 修复（spy 第七批真合同 audit — SAMPLE-CO-D/茅台/习酒合同反复出现的"统一社会信用代码：..." FP）：
+    // v3 修复（spy audit batch #7 — 测试牌/丙丁/戊己合同反复出现的"统一社会信用代码：..." FP）：
     //   - 真合同最常用 label 是"统一社会信用代码"（9 字），原 regex 不收 → 18 位 USCC 漏识别
     //   - mammoth 拼接常丢尾部字母校验码（如 91440101567914858A → 91440101567914858）
     //     → 退化成 17 位纯数字被 BANK_CARD regex 抢匹配 → 错标税号身份为银行卡
@@ -65,7 +65,7 @@ export const BUILTIN_RULES: BuiltinRuleDefinition[] = [
     //   修法：[0-9]\d{4} 允许任意首位数字
     // v3 修复：支持 19 位银联卡（原 regex 限制 16-18 位）
     //   \d{3,5} → \d{3,6} 允许最后一组 3-6 位（总 16-19 位）
-    // v4 修复（spy 第七批真合同 audit — CTR 合同外币账号 21 位被截 19 位 FN）：
+    // v4 修复（spy audit batch #7 — DEF组 contract外币账号 21 位被截 19 位 FN）：
     //   真实合同外币账户（美元/欧元）"110060437146100000175" 21 位 / "110060437386100000122" 21 位
     //   regex 上限 19 位 → 截 19 位丢失末尾 2 位（脱敏语义错位 — 标记 19 位 vs 实际 21 位）
     //   修法：\d{3,6} → \d{3,8} 允许最后一组 3-8 位（总 16-21 位）
@@ -108,7 +108,7 @@ export const BUILTIN_RULES: BuiltinRuleDefinition[] = [
     //     主类: [零壹贰叁...万亿]   分隔符: (?:[万亿】][digits]*)* （注意 * 不是 +）
     //     * 允许 "】元" 中 】 后直接接 元（0 digit）
     //     + 会要求 】 后必须有 digit，导致 "】元整" 跨不过去 → A1 反而 0 match
-    //   v5 修复（6 docx audit — 京城十二时辰 [538-540] "180万元" 只 match "万元" 2 chars）：
+    //   v5 修复（6 docx audit — 节目丙 [538-540] "180万元" 只 match "万元" 2 chars）：
     //     修法：top-level alternation 加 Arabic digit 版本
     //       \d+(?:,\d{3})*(?:\.\d+)?[万亿]元?(?:[digit][角分])*(?:整)?
     //     覆盖 "180万元" / "180万" / "1.5万元" / "180,000元"
@@ -146,11 +146,11 @@ export const BUILTIN_RULES: BuiltinRuleDefinition[] = [
     // alt A：完整型公司名（标准"X有限公司"等）
     // v2 修复（spy 截图反馈"公司名识别太贪婪"）：
     //   1. 左边界负向后顾 (?<![这那每该各某自己诸何之与和及或其的了在为于而则])
-    //      → 防止 "委托北京SAMPLE-CO-E公司"、"这家公司"、"A和B公司" 整段被左贪婪吞
+    //      → 防止 "委托北京甲集团公司"、"这家公司"、"A和B公司" 整段被左贪婪吞
     //   2. body {2,30}（最小 2 字、最多 30 字）→ 防止 "X公司" 单字字号 + 防止超长匹配
     //   3. 行业词 16 个 + 0-10 字缓冲（"融媒体科技文化" 这种）
     //
-    // v4 拆分（spy 6 docx audit - 三餐四季 [4996-5008] 等 "X集团...及其关联公司" 回归）：
+    // v4 拆分（spy 6-docx audit - 节目甲 [4996-5008] 等 "X集团...及其关联公司" 回归）：
     //   - 原 regex `alt A | alt B` 单条 alternation，alt A greedy 抢匹配导致 alt B 没机会
     //     例 "合作方为阿里巴巴集团及其关联公司"：
     //       - alt A: 16 chars greedy (body=14 "合作方为阿里巴巴集团及其关联" + form="公司")
@@ -168,7 +168,7 @@ export const BUILTIN_RULES: BuiltinRuleDefinition[] = [
     type: 'COMPANY',
     // alt B：简称 + 集团（如"阿里巴巴集团"）
     // v4 拆分（见上 alt A 注释）
-    // 副词前缀拒保护（spy 6 docx audit - 三餐四季 [14085-14091] "同时配合集团"）：
+    // 副词前缀拒保护（spy 6-docx audit - 节目甲 [14085-14091] "同时配合集团"）：
     //   - 纯 post-filter 处理（看 body 前 2-3 字符），不在 regex 里
     //     单字副词（时/同/也/又/还/但/或/仍/即/仅）会出现在真公司名（"时代集团"/"同方集团"）
     //     → 必须在 post-filter 用 2-3 字符副词链判定
@@ -178,7 +178,7 @@ export const BUILTIN_RULES: BuiltinRuleDefinition[] = [
   },
   {
     type: 'NAME',
-    // v2 修复（spy 第七批真合同 audit — 习酒合同 "项目负责人为蔡明衡" 漏识别）：
+    // v2 修复（spy audit batch #7 — 戊己合同 "项目负责人为蔡明衡" 漏识别）：
     //   原 regex lookbehind 只收 4 个 label（姓名/名字/客户姓名/联系人），真合同"项目负责人"未覆盖
     //   分隔符只允许 `[:：]`，合同叙述用"为"作分隔符（"联系人为张三"/"项目负责人为蔡明衡"）→ 漏识别
     //   修法：

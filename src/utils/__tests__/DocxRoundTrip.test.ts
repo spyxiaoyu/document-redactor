@@ -70,7 +70,7 @@ describe('DOCX write→mammoth read round-trip equality', () => {
   it('real DOCX source round-trip: positions preserved within body', async () => {
     // 模拟用户的真实场景：5678 chars、~230 段
     const fs = await import('fs');
-    const SRC = '<repo-path>/模板/SAMPLE-CT-002-知识产权服务框架协议-SAMPLE-CO-Z.docx';
+    const SRC = 'test-fixtures/sample-contract-A.docx';
     if (!fs.existsSync(SRC)) {
       console.log(`  skip: ${SRC} not found`);
       return;

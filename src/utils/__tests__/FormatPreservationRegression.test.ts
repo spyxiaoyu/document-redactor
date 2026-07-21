@@ -16,7 +16,7 @@ import mammoth from 'mammoth';
 import { writeDocxFromEdits } from '../docxZipWriter';
 import { readDocxFromArrayBuffer } from '../docxZipReader';
 
-const SRC = '<repo-path>/模板/SAMPLE-CT-002-知识产权服务框架协议-SAMPLE-CO-Z.docx';
+const SRC = 'test-fixtures/sample-contract-A.docx';
 
 function toArrayBuffer(buf: Uint8Array): ArrayBuffer {
   const ab = new ArrayBuffer(buf.byteLength);
@@ -109,8 +109,8 @@ describe('Format Preservation Probe — 验证 B 方案是否破坏原 docx 结�
     const origMammoth = (await mammoth.extractRawText(mammothInput(srcBuf))).value;
     console.log(`  mammoth text:   ${origMammoth.length} chars`);
 
-    // 找一个真实 match：SAMPLE-CO-F（北京）融媒体科技文化有限公司
-    const matchStr = 'SAMPLE-CO-F（北京）融媒体科技文化有限公司';
+    // 找一个真实 match：示例公司（北京）融媒体科技文化有限公司
+    const matchStr = '示例公司（北京）融媒体科技文化有限公司';
     const maskedToken = '__________________' + '\u200B';  // 18 下划线 + 1 ZWS
     const edits = [{
       maskedToken: matchStr,    // 找原值

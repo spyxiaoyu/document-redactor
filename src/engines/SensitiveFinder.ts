@@ -89,7 +89,7 @@ export class SensitiveFinder {
           if ((beforeChar && /\d/.test(beforeChar)) || (afterChar && /\d/.test(afterChar))) continue;
         }
 
-        // BANK_CARD post-filter v2（spy 6 docx audit — 三餐四季 [11088-11107] "4306241990006060034" 19位畸形ID FP）：
+        // BANK_CARD post-filter v2（spy 6-docx audit — 节目甲 [11088-11107] "4306241990006060034" 19位畸形ID FP）：
         //   BANK_CARD v3 `\d{3,6}` 让 19 位数字串被识别为银行卡，但其中一部分是畸形 ID_CARD 格式
         //   （原文档 typo 多了 1 位，ID_CARD regex 因月份不合法匹配失败，导致 BANK_CARD 抢匹配）
         //   修法：前 10 位匹配 ID_CARD region+year 前缀 → 排除（容忍 typo 位置）
@@ -98,11 +98,11 @@ export class SensitiveFinder {
         //     - 0413090103000048204 (19 chars, 首字符 0 不匹配 [1-9]) → 保留 ✅
         //     - 44057601040010545 (17 chars, year 6010 前缀 60 不匹配) → 保留 ✅
         //   阈值 17：ID_CARD 至少 17 位 prefix 才检查
-        // v3 修复（spy 6 docx audit — 三餐四季 [12802-12818] "4502019970621042X" 17字typo身份证）：
+        // v3 修复（spy 6-docx audit — 节目甲 [12802-12818] "4502019970621042X" 17字typo身份证）：
         //   原 16 位纯卡（如 "1234567812345678"）会被 BANK_CARD 识别，但若后接 X（ID 校验码）或
         //   数字（更长 ID 段），实际是 17+ 位身份证 typo，不是银行卡
         //   修法：value.length === 16 时检查下一字符
-        //     - 16 位 + X → "4502019970621042X" → 拒 ✅ (三餐四季 FP 修复)
+        //     - 16 位 + X → "4502019970621042X" → 拒 ✅ (节目甲 FP 修复)
         //     - 16 位 + 数字 → "450201997062104212345678" 前 16 位是 ID 段 → 拒
         //       （实际 BANK_CARD regex 会贪婪匹配到 19 位 "4502019970621042123"，但前 16 位是 ID 段，
         //        后接数字说明是 ID 片段延伸，应整体拒 — 现有 v2 ≥17 位检查一并处理）
@@ -110,21 +110,21 @@ export class SensitiveFinder {
         //     - 16 位 + 换行/空格 → 真卡号 → 保留 ✅
         if (rule.type === 'BANK_CARD') {
           if (value.length >= 17 && /^[1-9]\d{5}(?:18|19|20)\d{2}/.test(value)) continue;
-          // 17-19 位纯数字 统一社会信用代码 FP（第七批真合同 audit — SAMPLE-CO-D mammoth 拼丢尾部字母）：
+          // 17-19 位纯数字 统一社会信用代码 FP（第七批真合同 audit — 测试牌 mammoth 拼丢尾部字母）：
           //   USCC 18 位 = 工商代码"9" + 机构类别"1/2/3" + 行政区划码 + 主体码 + 字母校验码
           //   mammoth 拼接常丢尾部字母校验码（真值 91440101567914858A → 17 位 91440101567914858）
           //   即使哺乳到 19 位 / 若 USCC 字母在更后位置 → 也可能被误吃
           //   银行卡 BIN 不以 91/92/93 开头（银联 62 / Visa 4 / MC 5）→ 安全区分
           //   阈值 17-19：USCC 退化形态（17 丢 1 位 / 18 原值丢字母 / 19 字母被替换）
           if (value.length >= 17 && value.length <= 19 && /^9[123]/.test(value) && /^\d+$/.test(value)) continue;
-          // P4-1 URL 路径末段 FP（spy 第七批真合同 audit — 金蝶开发运维合同 footer）：
+          // P4-1 URL 路径末段 FP（spy audit batch #7 — 金蝶开发运维合同 footer）：
           //   "club.kdcloud.com/article/153835620237019392" — 文末 URL 末段数字被 BANK_CARD 抢匹配
           //   判别：match 前 30 chars 文本片段含 URL 路径特征（`.com/`/`/article/`/`http` 等）
           {
             const before = text.slice(Math.max(0, start - 30), start);
             if (/\.com\/|\.cn\/|\/article\/|\.html|\.asp|\.aspx|https?:|\.org\/|\.net\//.test(before)) continue;
           }
-          // P4-2 软件序列号 FP（spy 第七批真合同 audit — 金蝶合同 "金蝶云·星空旗舰版（1423029347329064960）"）：
+          // P4-2 软件序列号 FP（spy audit batch #7 — 金蝶合同 "金蝶云·星空旗舰版（1423029347329064960）"）：
           //   商品序列号/简注在中文全角括号里，不是银行账号
           //   判别：match 紧贴前 1 char = `（` + 紧贴后 1 char = `）`，且前无"账号"/"账户"/"卡号"等 label
           {
@@ -165,7 +165,7 @@ export class SensitiveFinder {
         //     → match 前 5 chars 文本片段必有 `【`
         //   孤立 `】`（无 `【` 配对）→ docx 表格 cell 残余 → 拒
         //   阈值 5 chars：足够覆盖 `【X`（X 是 match 前 1 个字符）场景
-        // AMOUNT 百分比/编号 FP（spy 第七批真合同 audit — "金额30%违约金"/"合计 244"/"费用 0.5%"）：
+        // AMOUNT 百分比/编号 FP（spy audit batch #7 — "金额30%违约金"/"合计 244"/"费用 0.5%"）：
         //   AMOUNT regex `(?:价格|金额|...)[：:\s]*\b\d+` 看到 label + digit 就匹配
         //   真合同反复出现："支付协议总费用30%的违约金"/"本合同金额 2.1"/"合计 244"（表格统计）
         //   这些不是真金额，是百分比/条款编号/表格统计
@@ -233,32 +233,32 @@ if (!formMatch) continue;
           const form = formMatch[2];
 
           // prefix-only 切断合同模板前缀（甲方为/委托/代理/代表/合作/经 等）：
-          //   - "甲方为北京SAMPLE-CO-Z" → 切"甲方为" → "北京SAMPLE-CO-Z" ✅
-          //   - "委托北京SAMPLE-CO-E公司代理SAMPLE-CO-F..." → 切"委托" → "北京SAMPLE-CO-E公司代理SAMPLE-CO-F..." (mid-verb reject 兜底)
+          //   - "甲方为北京测试科技" → 切"甲方为" → "北京测试科技" ✅
+          //   - "委托北京甲集团公司代理辛公司..." → 切"委托" → "北京甲集团公司代理辛公司..." (mid-verb reject 兜底)
           //   - "经维沃移动通信有限公司" → 切"经" → "维沃移动通信有限公司" ✅ (zcool docx [102-113] FP 修复)
           //   - "华为投资控股" → 不切 → "华为投资控股" ✅ ("华为"是品牌特例)
           //   - "设计师及其所属" → 不切（"及其"不在 prefix 列表）→ "设计师及其所属" hanChars < 3 → 拒
-          // v4 修复（spy 6 docx audit - 案例 E3/E4 真简称回归）：
-          //   - "甲方为腾讯集团" 切 "甲方为" 后剩 "腾讯" 2 hanChars
+          // v4 修复（spy 6-docx audit - 案例 E3/E4 真简称回归）：
+          //   - "甲方为占位集团" 切 "甲方为" 后剩 "占位" 2 hanChars
           //     旧逻辑：<3 break → 整段拒（丢真简称） ❌
           //     v4：放宽切，让 cuttablePrefix 命中已知模板词时即使剩余 <3 也切
-          //     → emit "腾讯集团" 4 chars（带 集团 form）✅
+          //     → emit "占位集团" 4 chars（带 集团 form）✅
           // 切完后还允许再切一轮（处理 "委托...代理..." 连续 verb 前缀）：
           let safeStart = 0;
-          // v4 cuttablePrefix 扩展 "方为?"（spy 6 docx audit - E3 "合作方为阿里巴巴集团"）：
+          // v4 cuttablePrefix 扩展 "方为?"（spy 6-docx audit - E3 "合作方为阿里巴巴集团"）：
           //   - "方为" 是合同 coverb 短语（"X方为..." = "X party as..."）
           //   - 加进可切列表后 "合作方为" 连续切 2 次（先 "合作" 后 "方为"）→ "阿里巴巴"
           //   - 单字 "方" 不切（"方正集团" 这种真简称保留）
-          // v5 cuttablePrefix 扩展（SAMPLE-CO-J Pre-A 增资协议 audit 22 FPs 修复 — case 29/31）：
+          // v5 cuttablePrefix 扩展（样例品牌 Pre-A 增资协议 audit 22 FPs 修复 — case 29/31）：
           //   - 加 "投资方为"：case 31 "投资方为示例乳业集团" 切前缀 → emit "示例乳业集团有限公司" ✅
           //   - 加 "约定以书面形式向"：case 29 "约定以书面形式向上海示例..." 切前缀 → emit "上海示例企业管理咨询有限公司" ✅
           //   - 不加 "约定" 单字（"约定科技有限公司" 这种假想名会误伤）+ 不加 "向" 单字（"向上集团" 误伤风险）
           //   - v6 cuttablePrefix 扩展（有关事项说明 audit — case 47）：
-          //     加 "）"/")"/"子公司"：case 47 "）子公司SAMPLE-CO-H（上海）文化科技有限公司"
-          //     切右括号(前一实体残留) + "子公司"通用前缀 → emit "SAMPLE-CO-H（上海）文化科技有限公司" ✅
+          //     加 "）"/")"/"子公司"：case 47 "）子公司癸公司（上海）文化科技有限公司"
+          //     切右括号(前一实体残留) + "子公司"通用前缀 → emit "癸公司（上海）文化科技有限公司" ✅
           //     真公司字号不以 "）"/")"/"子公司" 开头 → 不误伤
-          //   - v7 cuttablePrefix 扩展（第六批 audit — 方太腾讯 "剧目由北京腾讯文化传媒有限公司"）：
-          //     加 "剧目由"：切叙述前缀 "剧目由"（"剧目" + coverb "由"）→ emit "北京腾讯文化传媒有限公司" ✅
+          //   - v7 cuttablePrefix 扩展（第六批 audit — 甲乙占位 "剧目由北京占位传媒有限公司"）：
+          //     加 "剧目由"：切叙述前缀 "剧目由"（"剧目" + coverb "由"）→ emit "北京占位传媒有限公司" ✅
           //     单字 "由" 不切（NARRATIVE_BOUNDARY 已覆盖 "由X" 开头场景）；只切完整短语 "剧目由"
           const cuttablePrefix = /^(?:甲方为?|乙方为?|丙方为?|丁方为?|戊方为?|己方为?|庚方为?|辛方为?|壬方为?|癸方为?|方为?|经|因|委托|代理|代表|合作|承办|服务|负责|投资方为|约定以书面形式向|剧目由|本[\u4e00-\u9fa5]{1,6}由|）|\)|子公司)/;
           let lastCutLength = 0;
@@ -270,7 +270,7 @@ if (!formMatch) continue;
             // v4 放宽切断：cuttablePrefix 命中的是已知合同模板词，直接切不论剩余长度
             // （剩余长度兜底在外层 hanChars < 3 检查）
             // 切断后允许跳过 1-4 个字符（公司名/标点）再切下一轮 verb 前缀
-            // 例 "委托" + "北京SAMPLE-CO-E" + "代理" → safeStart 累加到 "代理" 后
+            // 例 "委托" + "北京甲集团" + "代理" → safeStart 累加到 "代理" 后
             const skipRegion = body.slice(safeStart + cutLength, safeStart + cutLength + 4);
             safeStart += cutLength;
             // 检查 skipRegion 后面是否紧跟 verb 前缀
@@ -282,9 +282,9 @@ if (!formMatch) continue;
           }
 
           // 检查 safeBody 至少 3 字汉字
-          // v4 例外（spy 6 docx audit - 三餐四季 [27-39] "甲方为腾讯集团" 等真简称保留）：
+          // v4 例外（spy 6-docx audit - 节目甲 [27-39] "甲方为占位集团" 等真简称保留）：
           //   - 若已被 cuttablePrefix 切（即 safeStart > 0），剩余 body 可放宽到 ≥1 han char
-          //     例 "甲方为腾讯集团" 切 "甲方为" 后剩 "腾讯" 2 char，应接受（再发 "腾讯集团"）
+          //     例 "甲方为占位集团" 切 "甲方为" 后剩 "占位" 2 char，应接受（再发 "占位集团"）
           //   - 不安全：纯短 body（如 "华为公司" 2 hanChars body）仍会 hanChars<3 + safeStart=0 拒
           const safeBody = body.slice(safeStart);
           const hanChars = safeBody.match(/[\u4e00-\u9fa5]/g) || [];
@@ -292,9 +292,9 @@ if (!formMatch) continue;
           if (hanChars.length < 3 && safeStart === 0) continue;
 
           // 括号断裂 FP（第七批真合同 audit — CMBC 合同 P10b "收款单位（公司全称）：..." mammoth 拼接）：
-          //   COMPANY body 允许中文/半角括号，遇 "收款单位（公司全称）：北京SAMPLE-CO-E教育科技有限公司"
+          //   COMPANY body 允许中文/半角括号，遇 "收款单位（公司全称）：北京甲集团教育科技有限公司"
           //   regex 从 "收款单位（" 吞到第一个 "公司" → "收款单位（公司"（未配对的 "（"）
-          //   真公司名括号必配对（"SAMPLE-CO-F（海南）..."/"SAMPLE-CO-H（上海）..."）→ safeBody 括号数量不等即断裂残留 → 拒
+          //   真公司名括号必配对（"辛公司（海南）..."/"癸公司（上海）..."）→ safeBody 括号数量不等即断裂残留 → 拒
           //   注意：在 cuttablePrefix 切完后检查 safeBody（不查原 value），否则被切掉的前导 "）"（case 47）会误判不配对
           {
             const opens = (safeBody.match(/[（(]/g) || []).length;
@@ -307,8 +307,8 @@ if (!formMatch) continue;
           //     例 "需经物业公司" → 切"经"剩"物业"2 hanChars <3 → 拒 ✓
           //   - 多字 cuttablePrefix（"甲方为"/"方为"/"子公司"）切完后剩 < 2 hanChars → 拒
           //     例 "达人、经纪公司" → 切"经"1字 → 剩"纪"1 <2 → 拒 ✓
-          //     例 "甲方为腾讯集团" 切"甲方为"3字 → 剩"腾讯"2 ≥2 → 保留 ✓
-          //     例 "）子公司SAMPLE-CO-H（上海）..." 切"）"1字+扫"子公司"3字 → lastCutLength=3 → 剩"SAMPLE-CO-H..." ≥3 → 保留 ✓
+          //     例 "甲方为占位集团" 切"甲方为"3字 → 剩"占位"2 ≥2 → 保留 ✓
+          //     例 "）子公司癸公司（上海）..." 切"）"1字+扫"子公司"3字 → lastCutLength=3 → 剩"癸公司..." ≥3 → 保留 ✓
           if (safeStart > 0) {
             if (lastCutLength === 1 && hanChars.length < 3) continue;
             if (lastCutLength >= 2 && hanChars.length < 2) continue;
@@ -336,7 +336,7 @@ if (!formMatch) continue;
           //     （如 "华为" 的 "为"、"美的集团" 的 "的"），避免误杀
           if (/[与和及其了在出于而之则这那每该各自己诸何属]/.test(safeBody)) continue;
 
-          // 三次检查（顺位延续）：副词前缀拒（v3 spy 6 docx audit — 三餐四季 [14085-14091] FP 修复）
+          // 三次检查（顺位延续）：副词前缀拒（v3 spy 6-docx audit — 节目甲 [14085-14091] FP 修复）
           //   - "同时配合集团" / "也同样隶属于集团" / "但还需配合集团" 等叙述短语被 alt B 误识
           //   - 单字副词（时/同/也/又/还/但/或/仍/即）常出现在真公司名（如"时代集团"/"同方集团"/"如新集团"）
           //     → 必须 2+ 字符副词链匹配才拒绝，避免误杀"X时集团"/"Y同集团"等真简称
@@ -350,7 +350,7 @@ if (!formMatch) continue;
           //   - 注意：保留单字 "时/同/也/又" 在合法公司名里的可能性
           if (/^(?:同时|但还|但是|但又|但仍|但须|但必|但需|但得|也同|也得|也须|也必|也需|也仍|也是|仍旧|仍然|仍须|仍必|仍需|仍得|还是|仍是|即便|即是|或是|同样|又同|又还|又须|又得|还需|还能)/.test(safeBody)) continue;
 
-          // 五次检查：safeBody 含合同动作动词 → 拒（SAMPLE-CO-J Pre-A 增资协议 audit 22 FPs 修复）
+          // 五次检查：safeBody 含合同动作动词 → 拒（样例品牌 Pre-A 增资协议 audit 22 FPs 修复）
           //   - 真公司 body 是静态名词（地点 + 品牌 + 行业词"科技/投资/实业" + 公司形态"发展/控股/管理"）
           //   - FP body 含动态动作词（"应向"/"已经"/"办理"/"经营"/"承诺"/"损害"/"制订" 等合同动作动词）
           //   - 22 个 FP 案例分析：所有 FP body 都含至少 1 个明显动作动词
@@ -361,7 +361,7 @@ if (!formMatch) continue;
           //   - 命中即拒整段（不拆 — 这些动词不在 mid-verb 链中，强行 SPLIT 容易产生虚假子串）
           if (ACTION_VERB_TRIGGERS.test(safeBody)) continue;
 
-          // 六次检查：单字 coverb + 通用名词短语 → 拒（SAMPLE-CO-J audit 剩余 coverb+generic FPs 修复）
+          // 六次检查：单字 coverb + 通用名词短语 → 拒（样例品牌 audit 剩余 coverb+generic FPs 修复）
           //   - "由正涵投资向公司" / "为集团公司" / "的全资子公司" / "对集团X"
           //   - 这些 body 以单字 coverb（由/为/的/对/向）开头，紧跟通用名词短语（集团/子）
           //   - 真公司 body 通常不以单字 coverb 开头（"由"/"为"/"的"/"对" 出现在真公司名里多为中段，如"华为"中的"为"已被 cuttablePrefix 截掉）
@@ -369,7 +369,7 @@ if (!formMatch) continue;
           //     但 "为群集团" 是极少见公司名，可以接受（不阻塞核心场景）
           if (/^(?:由[\u4e00-\u9fa5]{2,8}向|的[\u4e00-\u9fa5]{0,5}子|对[\u4e00-\u9fa5]{0,4}集团|为[\u4e00-\u9fa5]{0,3}集团)/.test(safeBody)) continue;
 
-          // 七次检查 v2（spy 第七批真合同 audit — 生态城管委会合同叙述短语 FP）：
+          // 七次检查 v2（spy audit batch #7 — 生态城管委会合同叙述短语 FP）：
           //   body 含描述短语特征词 → 拒
           //     - "连续多年获得中央电视台十佳广告代理公司" → 含"连续"/"十佳" → 叙述性短语被吞
           //     - "直接投资的控股公司" → 含"直接投资" → 条款描述
@@ -400,7 +400,7 @@ if (!formMatch) continue;
           if (/为[\u4e00-\u9fa5]{0,4}(?:集团|公司)$/.test(safeBody)) continue;
 
           // 十次检查：value 以 "为" + 长内容 + form 开头（叙述 coverb 模式）
-          //   - "为上海SAMPLE-CO-J健康科技发展有限公司" → "为" coverb + 12 字内容 + "有限公司" → 拒
+          //   - "为上海样例品牌健康科技发展有限公司" → "为" coverb + 12 字内容 + "有限公司" → 拒
           //   - "为群集团有限公司" → "为" + 1 字 + "集团有限公司" → 1 < 8 → 不拒（保留真简称）
           //   - 阈值 8：真简称 body 通常 < 8 字（"为群"2字 / "为X集团"3-5字）
           //   - 阈值 < 8 会误伤 "为X有限公司" 5字真简称
@@ -417,7 +417,7 @@ if (!formMatch) continue;
           //     regex greedy 把两家公司合成一个超长 body+form → 28 chars 错配
           //   - 保守策略：safeBody 含 "委托"/"代理"/"代表" 且长度 > 18 → 拒绝整个匹配
           //     用户可手动高亮两家公司
-          //   - 阈值 18：单合法公司 body 通常 < 18 char（"SAMPLE-CO-F（北京）融媒体科技文化有限" = 14 char）
+          //   - 阈值 18：单合法公司 body 通常 < 18 char（"示例公司科技文化有限" = 14 char）
           //     例外测试 case 22 "智能代理有限公司" body 6 < 18，应保留
           // 三次检查：mid-verb SPLIT 防御（zcool docx [116-144] FP 修复）
           //   - "X公司委托Y公司" / "X公司代理Y公司" / "X公司代表Y公司"
@@ -516,11 +516,11 @@ if (!formMatch) continue;
  */
 
 /**
- * 合同动作动词 trigger list（SAMPLE-CO-J Pre-A 增资协议 audit 22 FPs 修复）
+ * 合同动作动词 trigger list（样例品牌 Pre-A 增资协议 audit 22 FPs 修复）
  *
  * 设计：真公司 body 是静态名词（地点 + 品牌 + 行业词），FP body 含动态动作动词。
  *   - 22 个 FP 案例 body 全部命中至少 1 个 trigger
- *   - 真公司名 body（"上海示例企业管理咨询"/"示例乳业"/"三餐四季网络科技"）都不含 trigger
+ *   - 真公司名 body（"上海示例企业管理咨询"/"示例乳业"/"节目甲网络科技"）都不含 trigger
  *
  * 排除词（避免误伤）：
  *   - "代理"（case 22 "智能代理有限公司"）

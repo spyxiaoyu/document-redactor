@@ -16,12 +16,12 @@ describe('End-to-end: encrypt → decrypt → restore pipeline', () => {
     const crypto = new CryptoManager();
     const desensitizer = new Desensitizer(crypto);
 
-    const text = '甲方：北京示例科技有限公司\n项目编号：SAMPLE-CT-002\n乙方：张三';
+    const text = '甲方：北京示例科技有限公司\n项目编号：SAMPLE-A-001\n乙方：张三';
     const matches: SensitiveMatch[] = [
       // 位置严格按 ORIGINAL text 数。已确认不重叠。
       { id: '1', type: 'COMPANY', value: '北京示例科技有限公司', start: 3, end: 15, confidence: 1, context: 'test' },
-      { id: '2', type: 'CONTRACT_NO', value: 'SAMPLE-CT-002', start: 21, end: 34, confidence: 1, context: 'test' },
-      { id: '3', type: 'NAME', value: '张三', start: 38, end: 40, confidence: 1, context: 'test' },
+      { id: '2', type: 'CONTRACT_NO', value: 'SAMPLE-A-001', start: 21, end: 33, confidence: 1, context: 'test' },
+      { id: '3', type: 'NAME', value: '张三', start: 37, end: 39, confidence: 1, context: 'test' },
     ];
 
     // Step 1: 脱敏

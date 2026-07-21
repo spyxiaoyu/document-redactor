@@ -1,7 +1,7 @@
 /**
  * spy 提供的 zcool 法务修订 docx 真实误识别率测试
  *
- * 输入 docx: <repo-path>/work/zcool/SAMPLE-CO-E【合同审查2022年度】/2022-8/【著作权转让书】iQOOxSAMPLE-CO-I-NEO虚拟形象及美图-法务修订0819.docx
+ * 输入 docx: test-fixtures/work/sample-A/2022-8/【著作权转让书】品牌甲乙x占位作-NEO虚拟形象及品牌丙-法务修订0819.docx
  *
  * 任务：
  *   1. mammoth 提取纯文本（去除 <w:ins>/<w:del> 修订标记干扰）
@@ -19,7 +19,7 @@ import { BUILTIN_RULES } from '@/rules/BuiltinRules';
 import { applyDocxEdits } from '@/utils/docxWriter';
 import { readDocxFromArrayBuffer } from '@/utils/docxZipReader';
 
-const SRC = '<repo-path>/work/zcool/SAMPLE-CO-E【合同审查2022年度】/2022-8/【著作权转让书】iQOOxSAMPLE-CO-I-NEO虚拟形象及美图-法务修订0819.docx';
+const SRC = 'test-fixtures/work/sample-A/2022-8/【著作权转让书】品牌甲乙x占位作-NEO虚拟形象及品牌丙-法务修订0819.docx';
 
 function toArrayBuffer(buf: Uint8Array): ArrayBuffer {
   const ab = new ArrayBuffer(buf.byteLength);

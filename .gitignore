@@ -6,3 +6,7 @@ dist.zip
 .vite/
 coverage/
 .claude/
+
+# 测试 fixtures：含真合同，gitignore 内容（.gitkeep 保留）
+test-fixtures/*
+!test-fixtures/.gitkeep

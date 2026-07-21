@@ -4,7 +4,7 @@
  * 锁定 bug（CLAUDE.md §11 测试先行铁律 Step 1）：spy 工作流截图反馈公司名识别太贪婪，
  * 3 个具体 false positive：
  *   1. "设计公司"（描述性短语，非真公司名）
- *   2. "委托北京SAMPLE-CO-E公司"（左边界贪婪吞"委托"）
+ *   2. "委托北京甲集团公司"（左边界贪婪吞"委托"）
  *   3. "设计师及其所属公司"（body 含"及其"介词链）
  *
  * 3 个结构性缺陷（regex 层面）：
@@ -41,17 +41,17 @@ describe('COMPANY 识别 — spy 截图 false positive 案例', () => {
       expect(matches.some(m => m === '设计公司')).toBe(false);
     });
 
-    it('case 2: "委托北京SAMPLE-CO-E公司" → 应该只匹配 "北京SAMPLE-CO-E公司"，不能吞 "委托"', () => {
-      const text = '委托北京SAMPLE-CO-E公司代理本案';
+    it('case 2: "委托北京甲集团公司" → 应该只匹配 "北京甲集团公司"，不能吞 "委托"', () => {
+      const text = '委托北京甲集团公司代理本案';
       const matches = findCompany(text);
       console.log(`\n[case 2] 输入: "${text}" → 匹配: ${JSON.stringify(matches)}`);
-      // 期望：匹配 "北京SAMPLE-CO-E公司"，不能匹配 "委托北京SAMPLE-CO-E公司"
-      expect(matches).not.toContain('委托北京SAMPLE-CO-E公司');
-      // 注意：当前 buggy regex 会匹配 "委托北京SAMPLE-CO-E公司"，修复后应该匹配 "北京SAMPLE-CO-E公司"
+      // 期望：匹配 "北京甲集团公司"，不能匹配 "委托北京甲集团公司"
+      expect(matches).not.toContain('委托北京甲集团公司');
+      // 注意：当前 buggy regex 会匹配 "委托北京甲集团公司"，修复后应该匹配 "北京甲集团公司"
       // 由于左边界负向后顾，"北京"前是"托"（中文），仍会触发负向后顾拒绝。
-      // 这种情况下，应该匹配 "北京SAMPLE-CO-E公司"（这是用户的真实公司名）。
-      // 我们期望至少匹配 "北京SAMPLE-CO-E公司" 这部分。
-      expect(matches.some(m => m.includes('北京SAMPLE-CO-E公司'))).toBe(true);
+      // 这种情况下，应该匹配 "北京甲集团公司"（这是用户的真实公司名）。
+      // 我们期望至少匹配 "北京甲集团公司" 这部分。
+      expect(matches.some(m => m.includes('北京甲集团公司'))).toBe(true);
     });
 
     it('case 3: "设计师及其所属公司" → body 含介词 "及其"，应被拒', () => {
@@ -64,18 +64,18 @@ describe('COMPANY 识别 — spy 截图 false positive 案例', () => {
   });
 
   describe('真公司名必须能识别（不能误伤）', () => {
-    it('case 4: "北京SAMPLE-CO-Z有限公司" — 完整型', () => {
-      const text = '甲方为北京SAMPLE-CO-Z有限公司';
+    it('case 4: "北京示例科技有限公司" — 完整型', () => {
+      const text = '甲方为北京示例科技有限公司';
       const matches = findCompany(text);
       console.log(`\n[case 4] 输入: "${text}" → 匹配: ${JSON.stringify(matches)}`);
-      expect(matches).toContain('北京SAMPLE-CO-Z有限公司');
+      expect(matches).toContain('北京示例科技有限公司');
     });
 
-    it('case 5: "SAMPLE-CO-F（北京）融媒体科技文化有限公司" — 含括号', () => {
-      const text = 'SAMPLE-CO-F（北京）融媒体科技文化有限公司';
+    it('case 5: "示例公司（北京）融媒体科技文化有限公司" — 含括号', () => {
+      const text = '示例公司（北京）融媒体科技文化有限公司';
       const matches = findCompany(text);
       console.log(`\n[case 5] 输入: "${text}" → 匹配: ${JSON.stringify(matches)}`);
-      expect(matches).toContain('SAMPLE-CO-F（北京）融媒体科技文化有限公司');
+      expect(matches).toContain('示例公司（北京）融媒体科技文化有限公司');
     });
 
     it('case 6: "阿里巴巴集团" — 简称 + 集团', () => {
@@ -174,15 +174,15 @@ describe('COMPANY 识别 — spy 截图 false positive 案例', () => {
 
   describe('复合场景（多公司 + false positive 共存）', () => {
     it('case 18: 复合文档段落 — split 模式（user 反馈后改）', () => {
-      const text = `委托北京SAMPLE-CO-E公司代理SAMPLE-CO-F（北京）融媒体科技文化有限公司
+      const text = `委托北京甲集团公司代理示例公司（北京）融媒体科技文化有限公司
 与这家公司和那个公司合作，每个公司都参与。`;
       const matches = findCompany(text);
       console.log(`\n[case 18] 输入: ${text.length} 字 → 匹配 ${matches.length} 个: ${JSON.stringify(matches)}`);
-      // SPLIT 后应识别两家真公司（"北京SAMPLE-CO-E公司" 和 "SAMPLE-CO-F（北京）融媒体科技文化有限公司"）
-      expect(matches.some(m => m === '北京SAMPLE-CO-E公司')).toBe(true);
-      expect(matches.some(m => m.includes('SAMPLE-CO-F'))).toBe(true);
+      // SPLIT 后应识别两家真公司（"北京甲集团公司" 和 "示例公司（北京）融媒体科技文化有限公司"）
+      expect(matches.some(m => m === '北京甲集团公司')).toBe(true);
+      expect(matches.some(m => m.includes('辛公司'))).toBe(true);
       // merged FP 整体不应出现
-      expect(matches.some(m => m.includes('委托北京SAMPLE-CO-E公司代理'))).toBe(false);
+      expect(matches.some(m => m.includes('委托北京甲集团公司代理'))).toBe(false);
       // 下列 false positive 应被拒（既有 post-filter）
       expect(matches.some(m => m === '这家公司')).toBe(false);
       expect(matches.some(m => m === '那个公司')).toBe(false);
@@ -213,12 +213,12 @@ describe('COMPANY 识别 — spy 截图 false positive 案例', () => {
 
     it('case 21: mid-verb (委托) 长 body 应拆成两家公司（不是整体拒）', () => {
       // zcool docx [116-144] "X公司委托Y公司" 28 chars — 用户反馈要 SPLIT 不 REJECT
-      const text = '北京新意互动数字技术有限公司委托北京SAMPLE-CO-E网络科技有限公司承办';
+      const text = '北京新意互动数字技术有限公司委托北京甲集团网络科技有限公司承办';
       const matches = findCompany(text);
       console.log(`\n[case 21] 输入: "${text}" → 匹配: ${JSON.stringify(matches)}`);
       // split 期望：识别两家独立公司
       expect(matches.some(m => m === '北京新意互动数字技术有限公司')).toBe(true);
-      expect(matches.some(m => m === '北京SAMPLE-CO-E网络科技有限公司')).toBe(true);
+      expect(matches.some(m => m === '北京甲集团网络科技有限公司')).toBe(true);
       // merged FP 整体不应出现
       expect(matches.some(m => m.includes('北京新意互动数字技术有限公司委托'))).toBe(false);
     });
@@ -319,8 +319,8 @@ describe('AMOUNT_UPPER + BANK_CARD 大括号/前导 0 bug 修复', () => {
   });
 
   /**
-   * 第三轮修复（spy 6 docx audit 暴露 — 2026-07-19）：
-   *   - AMOUNT_UPPER 残缺匹配：京城十二时辰 [538-540] "180万元" 只 match "万元" 2 chars
+   * 第三轮修复（spy 6-docx audit 暴露 — 2026-07-19）：
+   *   - AMOUNT_UPPER 残缺匹配：节目丙 [538-540] "180万元" 只 match "万元" 2 chars
    *     修法：regex 加 Arabic digit 前缀 alternation `\d+(?:,\d{3})*(?:\.\d+)?[万亿]元?`
    *   - BANK_CARD 误匹配畸形 ID：v3 \d{3,6} 让 19 位畸形 ID 卡（如 "4306241990006060034"）也被识别为银行卡
    *     修法：post-filter 排除 ID_CARD 格式（18-19 位 + region + 19/20 年份前缀）
@@ -330,7 +330,7 @@ describe('AMOUNT_UPPER + BANK_CARD 大括号/前导 0 bug 修复', () => {
   describe('AMOUNT_UPPER 阿拉伯数字前缀 + BANK_CARD 排除畸形 ID', () => {
     describe('AMOUNT_UPPER 阿拉伯数字前缀应完整匹配', () => {
       it('case C1: "人民币180万元" → 应匹配 "人民币180万元"（含前缀）', () => {
-        // 京城十二时辰 [538-540] bug：之前只 match "万元"
+        // 节目丙 [538-540] bug：之前只 match "万元"
         // v5 修法：Arabic digit alternation + (?:人民币)? prefix 完整捕获
         const text = '预算控制金额为人民币180万元';
         const matches = findByType(text, 'AMOUNT_UPPER');
@@ -372,7 +372,7 @@ describe('AMOUNT_UPPER + BANK_CARD 大括号/前导 0 bug 修复', () => {
 
     describe('BANK_CARD 应排除畸形 19 位 ID 卡格式', () => {
       it('case D1: 19 位畸形 ID "4306241990006060034" → 不应被识别为 BANK_CARD', () => {
-        // 三餐四季 [11088-11107] bug：v3 \d{3,6} 让 19 位 ID 也被匹配为银行卡
+        // 节目甲 [11088-11107] bug：v3 \d{3,6} 让 19 位 ID 也被匹配为银行卡
         // 修法：post-filter 排除 ID_CARD 格式（region(6) + 19|20 年份(4) + ...）
         const text = '主力编剧 朱星杰 男 4306241990006060034';
         const matches = findByType(text, 'BANK_CARD');
@@ -381,7 +381,7 @@ describe('AMOUNT_UPPER + BANK_CARD 大括号/前导 0 bug 修复', () => {
       });
 
       it('case D2: 19 位真银行卡 "1001182619000025616" 不应回归', () => {
-        // 三餐四季 [5061-5080] 已 pass: 19 位银联卡
+        // 节目甲 [5061-5080] 已 pass: 19 位银联卡
         const text = '开户账号：1001182619000025616';
         const matches = findByType(text, 'BANK_CARD');
         console.log(`\n[case D2] 输入: "${text}" → 匹配: ${JSON.stringify(matches)}`);
@@ -406,7 +406,7 @@ describe('AMOUNT_UPPER + BANK_CARD 大括号/前导 0 bug 修复', () => {
     });
 
     describe('COMPANY alt B 副词前缀应拒 + 真简称应保', () => {
-      // 三餐四季 [14085-14091] bug："同时配合集团"被识别成公司名
+      // 节目甲 [14085-14091] bug："同时配合集团"被识别成公司名
       // 根因：alt B "[\u4e00-\u9fa5]{2,8}集团" 左边界无负向后顾
       // 修法：alt B 加 (?<![时也又同还样但或仍即复再]) 拒副词前缀
 
@@ -431,11 +431,11 @@ describe('AMOUNT_UPPER + BANK_CARD 大括号/前导 0 bug 修复', () => {
         expect(matches).toContain('阿里巴巴集团');
       });
 
-      it('case E4: 真简称 "腾讯集团" 不应回归', () => {
-        const text = '甲方为腾讯集团';
+      it('case E4: 真简称 "占位集团" 不应回归', () => {
+        const text = '甲方为占位集团';
         const matches = findCompany(text);
         console.log(`\n[case E4] 输入: "${text}" → 匹配: ${JSON.stringify(matches)}`);
-        expect(matches).toContain('腾讯集团');
+        expect(matches).toContain('占位集团');
       });
 
       it('case E5: "但还需配合集团" → 多个副词连用仍拒', () => {
@@ -447,7 +447,7 @@ describe('AMOUNT_UPPER + BANK_CARD 大括号/前导 0 bug 修复', () => {
     });
 
     describe('TAX_ID 中文括号 + 短 label variant', () => {
-      // spy 6 docx audit - 三餐四季 [5018-5036] bug：
+      // spy 6-docx audit - 节目甲 [5018-5036] bug：
       //   text: "纳税识别号：【913100007397870325】"
       //   原 regex label alt 是 "纳税人识别号" 6 字版本 → 不匹配 "纳税识别号" 5 字版本
       //   即使 label 改对，regex 的 `[:：]?\s*` 不允许 `【` 作分隔符，BANK_CARD 仍优先认领 18 位纯数字
@@ -458,7 +458,7 @@ describe('AMOUNT_UPPER + BANK_CARD 大括号/前导 0 bug 修复', () => {
 
       it('case F1: "纳税识别号：【XXX】" 应识别 TAX_ID（5字 label + 中文左括号）', () => {
         const finder = new SensitiveFinder();
-        const text = '公司名称：【上海中视国际广告有限公司】\n纳税识别号：【913100007397870325】\n开户银行：【工行陆家嘴支行】';
+        const text = '公司名称：【上海壬传媒国际广告有限公司】\n纳税识别号：【913100007397870325】\n开户银行：【工行陆家嘴支行】';
         const result = finder.findSensitiveContent(text);
         const taxIds = result.matches.filter(m => m.type === 'TAX_ID');
         console.log(`\n[case F1] 匹配 TAX_ID: ${JSON.stringify(taxIds.map(m => m.value))}`);
@@ -498,7 +498,7 @@ describe('AMOUNT_UPPER + BANK_CARD 大括号/前导 0 bug 修复', () => {
     });
 
     describe('BANK_CARD 应排除 ID_CARD 16 位前缀 + X 片段', () => {
-      // spy 6 docx audit - 三餐四季 [12802-12818] bug：
+      // spy 6-docx audit - 节目甲 [12802-12818] bug：
       //   text: "4502019970621042X"（17 字 typo 缺一位身份证 + X 校验位）
       //   现状：BANK_CARD 只匹配前 16 位 "4502019970621042"，原 X 不在 match 范围
       //   已有 post-filter 仅检查 length ≥17 → 16 位不挡 → 误识别为银行卡
@@ -552,7 +552,7 @@ describe('AMOUNT_UPPER + BANK_CARD 大括号/前导 0 bug 修复', () => {
     });
 
     /**
-     * 第四轮修复（spy SAMPLE-CO-J Pre-A 增资协议 audit — 22 个 COMPANY FP）：
+     * 第四轮修复（spy 样例品牌 Pre-A 增资协议 audit — 22 个 COMPANY FP）：
      *   暴露大量叙述性短语被误识别为 COMPANY：
      *     - "青山资本应向公司" / "剩余款项计入公司" / "由正涵投资向公司"
      *     - "维持集团公司" / "影响集团公司" / "保证方承诺集团公司"
@@ -611,11 +611,11 @@ describe('AMOUNT_UPPER + BANK_CARD 大括号/前导 0 bug 修复', () => {
         expect(matches).toContain('上海示例企业管理咨询有限公司');
       });
 
-      it('case 30 (regression): "上海SAMPLE-CO-J健康科技发展有限公司" → 真简称应保留', () => {
-        const text = '甲方为上海SAMPLE-CO-J健康科技发展有限公司';
+      it('case 30 (regression): "上海样例品牌健康科技发展有限公司" → 真简称应保留', () => {
+        const text = '甲方为上海样例品牌健康科技发展有限公司';
         const matches = findCompany(text);
         console.log(`\n[case 30] 输入: "${text}" → 匹配: ${JSON.stringify(matches)}`);
-        expect(matches).toContain('上海SAMPLE-CO-J健康科技发展有限公司');
+        expect(matches).toContain('上海样例品牌健康科技发展有限公司');
       });
 
       it('case 31 (regression): "示例乳业集团有限公司" → 真简称应保留', () => {
@@ -655,15 +655,15 @@ describe('AMOUNT_UPPER + BANK_CARD 大括号/前导 0 bug 修复', () => {
     });
 
     describe('产权承诺函 audit — 连词"因"前缀误吞 FP 修复', () => {
-      // 根因：原文 "因SAMPLE-CO-F（海南）融媒体科技有限公司编制财务报告需要..."
-      //   "因"是连词（因…需要…），被吞进 COMPANY body 开头 → 假公司名 "因SAMPLE-CO-F（海南）融媒体科技有限公司"
+      // 根因：原文 "因辛公司（海南）融媒体科技有限公司编制财务报告需要..."
+      //   "因"是连词（因…需要…），被吞进 COMPANY body 开头 → 假公司名 "因辛公司（海南）融媒体科技有限公司"
       // 修法：cuttablePrefix 加单字连词 "因"（与现有 "经" 同类），切后 emit 真公司名
-      it('case 43: "因SAMPLE-CO-F（海南）融媒体科技有限公司编制..." → 切"因"保留真公司名', () => {
-        const text = '因SAMPLE-CO-F（海南）融媒体科技有限公司编制财务报告需要拟对其并购';
+      it('case 43: "因辛公司（海南）融媒体科技有限公司编制..." → 切"因"保留真公司名', () => {
+        const text = '因辛公司（海南）融媒体科技有限公司编制财务报告需要拟对其并购';
         const matches = findCompany(text);
         console.log(`\n[case 43] 输入: "${text}" → 匹配: ${JSON.stringify(matches)}`);
         expect(matches.some(m => m.startsWith('因'))).toBe(false);
-        expect(matches).toContain('SAMPLE-CO-F（海南）融媒体科技有限公司');
+        expect(matches).toContain('辛公司（海南）融媒体科技有限公司');
       });
 
       it('case 44 (regression): "北京饼干科技有限公司" → 不以因开头的真公司不受影响', () => {
@@ -677,8 +677,8 @@ describe('AMOUNT_UPPER + BANK_CARD 大括号/前导 0 bug 修复', () => {
     describe('有关事项说明(资产评估报告) audit — 叙述前缀/纯form/右括号 FP 修复', () => {
       // 资产评估报告叙述密集，暴露 3 类 FP + 1 陷阱：
       //   陷阱：body 含"评估"的是真公司（"北京坤元至诚资产评估有限公司"）→ "评估"不能进动词表
-      it('case 45: "本次评估对象为SAMPLE-CO-F（海南）融媒体科技有限公司" → 叙述前缀不识别', () => {
-        const text = '本次评估对象为SAMPLE-CO-F（海南）融媒体科技有限公司';
+      it('case 45: "本次评估对象为辛公司（海南）融媒体科技有限公司" → 叙述前缀不识别', () => {
+        const text = '本次评估对象为辛公司（海南）融媒体科技有限公司';
         const matches = findCompany(text);
         console.log(`\n[case 45] 输入: "${text}" → 匹配: ${JSON.stringify(matches)}`);
         expect(matches.some(m => m.includes('本次') || m.includes('对象'))).toBe(false);
@@ -693,12 +693,12 @@ describe('AMOUNT_UPPER + BANK_CARD 大括号/前导 0 bug 修复', () => {
         expect(matches.some(m => m.includes('本公司为'))).toBe(false);
       });
 
-      it('case 47: "）子公司SAMPLE-CO-H（上海）文化科技有限公司" → 切右括号+子公司前缀', () => {
-        const text = '）子公司SAMPLE-CO-H（上海）文化科技有限公司';
+      it('case 47: "）子公司癸公司（上海）文化科技有限公司" → 切右括号+子公司前缀', () => {
+        const text = '）子公司癸公司（上海）文化科技有限公司';
         const matches = findCompany(text);
         console.log(`\n[case 47] 输入: "${text}" → 匹配: ${JSON.stringify(matches)}`);
         expect(matches.some(m => m.startsWith('）') || m.startsWith('子公司'))).toBe(false);
-        expect(matches).toContain('SAMPLE-CO-H（上海）文化科技有限公司');
+        expect(matches).toContain('癸公司（上海）文化科技有限公司');
       });
 
       it('case 48: "现邀请贵公司参与" → 邀请指代不识别', () => {
@@ -715,8 +715,8 @@ describe('AMOUNT_UPPER + BANK_CARD 大括号/前导 0 bug 修复', () => {
         expect(matches).toContain('北京坤元至诚资产评估有限公司');
       });
 
-      it('case 50: "申报的含分摊并购北京SAMPLE-CO-K文化传播有限公司" → 叙述前缀不识别', () => {
-        const text = '申报的含分摊并购北京SAMPLE-CO-K文化传播有限公司';
+      it('case 50: "申报的含分摊并购北京sample-period文化传播有限公司" → 叙述前缀不识别', () => {
+        const text = '申报的含分摊并购北京sample-period文化传播有限公司';
         const matches = findCompany(text);
         console.log(`\n[case 50] 输入: "${text}" → 匹配: ${JSON.stringify(matches)}`);
         expect(matches.some(m => m.includes('申报') || m.includes('并购'))).toBe(false);
@@ -736,21 +736,21 @@ describe('AMOUNT_UPPER + BANK_CARD 大括号/前导 0 bug 修复', () => {
         expect(matches.some(m => m.includes('同意') || m.includes('原股东'))).toBe(false);
       });
 
-      it('case 53: "评估范围为SAMPLE-CO-F（海南）融媒体科技有限公司" → 切叙述前缀（评估公司不误杀）', () => {
-        const text = '评估范围为SAMPLE-CO-F（海南）融媒体科技有限公司';
+      it('case 53: "评估范围为辛公司（海南）融媒体科技有限公司" → 切叙述前缀（评估公司不误杀）', () => {
+        const text = '评估范围为辛公司（海南）融媒体科技有限公司';
         const matches = findCompany(text);
         console.log(`\n[case 53] 输入: "${text}" → 匹配: ${JSON.stringify(matches)}`);
         expect(matches.some(m => m.includes('范围'))).toBe(false);
       });
 
-      it('case 54: "政府补助为SAMPLE-CO-H（上海）文化科技有限公司" → 切叙述前缀', () => {
-        const text = '政府补助为SAMPLE-CO-H（上海）文化科技有限公司';
+      it('case 54: "政府补助为癸公司（上海）文化科技有限公司" → 切叙述前缀', () => {
+        const text = '政府补助为癸公司（上海）文化科技有限公司';
         const matches = findCompany(text);
         console.log(`\n[case 54] 输入: "${text}" → 匹配: ${JSON.stringify(matches)}`);
         expect(matches.some(m => m.includes('补助') || m.includes('政府'))).toBe(false);
       });
 
-      // 第四批 audit（方太2023/一汀/演员录制） — 5 个新 FP 修复
+      // 第四批 audit（甲乙2023/一汀/演员录制） — 5 个新 FP 修复
       it('case 55: "达人、经纪公司（如有）" → 切"经"剩"纪"1 hanChar 应拒', () => {
         const text = '达人、经纪公司（如有）应保持良好形象';
         const matches = findCompany(text);
@@ -766,8 +766,8 @@ describe('AMOUNT_UPPER + BANK_CARD 大括号/前导 0 bug 修复', () => {
         expect(matches.some(m => m.includes('双方') || m.includes('加盖'))).toBe(false);
       });
 
-      it('case 57: "上述甲方包括SAMPLE-CO-A的成员单位（宁波方太..." → 叙述词"上述/包括"应拒', () => {
-        const text = '上述甲方包括SAMPLE-CO-A的成员单位（宁波方太厨具有限公司';
+      it('case 57: "上述甲方包括甲乙集团的成员单位（宁波甲乙..." → 叙述词"上述/包括"应拒', () => {
+        const text = '上述甲方包括甲乙集团的成员单位（宁波甲乙厨具有限公司';
         const matches = findCompany(text);
         console.log(`\n[case 57] 输入: "${text}" → 匹配: ${JSON.stringify(matches)}`);
         expect(matches.some(m => m.includes('上述') || m.includes('包括'))).toBe(false);
@@ -781,11 +781,11 @@ describe('AMOUNT_UPPER + BANK_CARD 大括号/前导 0 bug 修复', () => {
       });
 
       // 回归保护 — v4 cuttablePrefix 严格化不能误伤真简称
-      it('case 59 (回归): "甲方为腾讯集团" → 切"甲方为"剩"腾讯"2 hanChar 应保留', () => {
-        const text = '甲方为腾讯集团';
+      it('case 59 (回归): "甲方为占位集团" → 切"甲方为"剩"占位"2 hanChar 应保留', () => {
+        const text = '甲方为占位集团';
         const matches = findCompany(text);
         console.log(`\n[case 59] 输入: "${text}" → 匹配: ${JSON.stringify(matches)}`);
-        expect(matches).toContain('腾讯集团');
+        expect(matches).toContain('占位集团');
       });
 
       // 第五批 audit（保证合同/品牌咨询/催款函/弱电改造/顾问咨询）— 4 类新 FP 修复
@@ -796,8 +796,8 @@ describe('AMOUNT_UPPER + BANK_CARD 大括号/前导 0 bug 修复', () => {
         expect(matches).not.toContain('围绕公司');
       });
 
-      it('case 61: "致央视创造传媒有限公司：" → 叙述前缀"致"应拒', () => {
-        const text = '致央视创造传媒有限公司：';
+      it('case 61: "致央电创造传媒有限公司：" → 叙述前缀"致"应拒', () => {
+        const text = '致央电创造传媒有限公司：';
         const matches = findCompany(text);
         console.log(`\n[case 61] 输入: "${text}" → 匹配: ${JSON.stringify(matches)}`);
         expect(matches.some(m => m.includes('致'))).toBe(false);
@@ -813,10 +813,10 @@ describe('AMOUNT_UPPER + BANK_CARD 大括号/前导 0 bug 修复', () => {
 
     /**
      * 第六批 audit — 全目录扫描 115 模板 docx 暴露的新 FP（数据驱动，不用手挑）：
-     *   - spy 6 docx audit 在 4 docx 上跑出来，但还有 ~100 docx 没扫
+     *   - spy 6-docx audit 在 4 docx 上跑出来，但还有 ~100 docx 没扫
      *   - 这次用脚本全扫，每个 docx 列出所有 matches，对照原文人工核对价值
-     *   - 结果发现以下 6 类 FP（跨 3 个 docx：方太腾讯/代销协议/演员录制）：
-     *     ① COMPANY "剧目由北京腾讯文化传媒..." "剧目由" coverb 前缀漏切
+     *   - 结果发现以下 6 类 FP（跨 3 个 docx：甲乙占位/代销协议/演员录制）：
+     *     ① COMPANY "剧目由北京占位传媒..." "剧目由" coverb 前缀漏切
      *     ② COMPANY "的独家经纪公司或代理公司" 描述性短语被识别
      *     ③ COMPANY "北京示例示例兄弟影院有限公司公司" mammoth 双公司拼接（docx 表格 cell merge 后 "公司   公司账号" 被吃成 "公司公司账号"）
      *     ④ BANK_CARD "911101065976768466" 等 18位纯数字 统一社会信用代码（USCC 没 letter）被误吃
@@ -826,13 +826,13 @@ describe('AMOUNT_UPPER + BANK_CARD 大括号/前导 0 bug 修复', () => {
      * §11 测试先行铁律: 先 red 写 probe，复现 6 类 FP
      */
     describe('第六批 audit 全目录扫描 — 6 类新 FP', () => {
-      it('case 63: COMPANY "剧目由北京腾讯..." → 应切"剧目由"剩真简称', () => {
-        // 方太腾讯 [1359-1374] FP
-        const text = '本剧目名称以片头字幕上载明的名称为准。剧目由北京腾讯文化传媒有限公司（以下简称"腾讯"或"腾讯方"）投资拍摄';
+      it('case 63: COMPANY "剧目由北京占位..." → 应切"剧目由"剩真简称', () => {
+        // 甲乙占位 [1359-1374] FP
+        const text = '本剧目名称以片头字幕上载明的名称为准。剧目由北京占位传媒有限公司（以下简称"占位"或"占位方"）投资拍摄';
         const matches = findCompany(text);
         console.log(`\n[case 63] 输入: "...${text.slice(20, 70)}..." → 匹配: ${JSON.stringify(matches)}`);
         expect(matches.some(m => m.startsWith('剧目由'))).toBe(false);
-        expect(matches).toContain('北京腾讯文化传媒有限公司');
+        expect(matches).toContain('北京占位传媒有限公司');
       });
 
       it('case 64: COMPANY "）的独家经纪公司或代理公司" → 描述性短语应拒', () => {
@@ -876,7 +876,7 @@ describe('AMOUNT_UPPER + BANK_CARD 大括号/前导 0 bug 修复', () => {
       });
 
       it('case 67: NAME "联系电话"（4字 label）→ 应拒', () => {
-        // 方太腾讯 [8468-8472] FP — 上一批只挡了 3字短 label
+        // 甲乙占位 [8468-8472] FP — 上一批只挡了 3字短 label
         // 真名（张三/李四/王五等）2-4 hanChars 不在排除列表
         // 修复：扩展 filter 含 联系电话/手机号码/电子邮箱/联系地址 等 4字 label
         const text = '甲方联系人：\n\n联系电话：\n\n电子邮箱：';

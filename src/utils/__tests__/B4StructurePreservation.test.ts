@@ -18,7 +18,7 @@ import mammoth from 'mammoth';
 import { writeDocxFromEdits } from '../docxZipWriter';
 import { readDocxFromArrayBuffer } from '../docxZipReader';
 
-const SRC = '<repo-path>/模板/SAMPLE-CT-002-知识产权服务框架协议-SAMPLE-CO-Z.docx';
+const SRC = 'test-fixtures/sample-contract-A.docx';
 
 function toArrayBuffer(buf: Uint8Array): ArrayBuffer {
   const ab = new ArrayBuffer(buf.byteLength);
@@ -36,11 +36,11 @@ interface SpyField {
 }
 
 const SPY_FIELDS: SpyField[] = [
-  { value: 'SAMPLE-CO-F（北京）融媒体科技文化有限公司', token: '[COMPANY_0001]' },
+  { value: '示例公司（北京）融媒体科技文化有限公司', token: '[COMPANY_0001]' },
   { value: '占位人', token: '[NAME_0003]' },
   { value: '13800000000', token: '[PHONE_0004]' },
   { value: 'contact@client-b.test', token: '[EMAIL_0005]' },
-  { value: '北京SAMPLE-CO-Z有限公司', token: '[COMPANY_0006]' },
+  { value: '北京示例科技有限公司', token: '[COMPANY_0006]' },
   { value: '张某某', token: '[NAME_0007]' },
   { value: '13800000001', token: '[PHONE_0008]' },
   { value: 'contact@client-a.test', token: '[EMAIL_0009]' },

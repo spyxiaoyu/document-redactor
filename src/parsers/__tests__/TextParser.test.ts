@@ -78,7 +78,7 @@ describe('SPEC-E2-03: TextParser', () => {
     });
 
     it('含中文 txt 文件：rawText 完整保留', async () => {
-      const content = '甲方：北京示例科技有限公司\n乙方：SAMPLE-CO-F文化有限公司\n联系人：占位人';
+      const content = '甲方：北京示例科技有限公司\n乙方：示例文化有限公司\n联系人：占位人';
       const f = makeFile('contract.txt', content);
       const result = await parser.parse(f);
       expect(result.rawText).toBe(content);

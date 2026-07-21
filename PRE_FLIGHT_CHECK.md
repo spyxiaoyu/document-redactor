@@ -135,7 +135,7 @@ npx vitest run src/utils/__tests__/searchRender.test.ts
 
 ## 8. 测试自身 setup 漏洞（**mock data 必须跟生产一致**）
 
-**历史 bug**：`0d0dcf2` 测试中 `text4='SAMPLE-CO-F文化'`（7 chars）但 `match.end=8` → visibleHits filter 把 hit[6,8) 过滤掉 → 测试 fail 暴露 mock 漏洞
+**历史 bug**：`0d0dcf2` 测试中 `text4='示例文化'`（7 chars）但 `match.end=8` → visibleHits filter 把 hit[6,8) 过滤掉 → 测试 fail 暴露 mock 漏洞
 
 - [ ] mock data 的 length 跟实际生产 data 对齐？
 - [ ] `text.length === match.end - match.start === match.value.length`？
@@ -242,7 +242,7 @@ npx eslint src --ext .ts,.tsx 2>&1 | tail -10
 
 ### §11.3 OOXML 段落级 sibling 元素必须保留（commit `8494c34` 根治）
 
-**历史 bug**：spy 真实 docx（SAMPLE-CO-Z合同，"SAMPLE-CO-F" 18 字跨 3 个 `<w:r>` 中间夹 2 个 `<w:proofErr/>`）走 B 方案 mask→restore 后下载，**提行不连贯、影响阅读**。
+**历史 bug**：spy 真实 docx（测试科技合同，"辛公司" 18 字跨 3 个 `<w:r>` 中间夹 2 个 `<w:proofErr/>`）走 B 方案 mask→restore 后下载，**提行不连贯、影响阅读**。
 
 - 根因：`mergeRunsForCoverage` 把 [runStart, runEnd) 区间内的所有内容替换成单个新 `<w:r>`。但 `<w:proofErr/>`、`<w:bookmarkStart/>`、`<w:bookmarkEnd/>` 等**不是** `<w:r>` 的子元素，是 `<w:p>` 的直接子元素（OOXML schema 硬性要求）。原实现一并吞掉 → Word/WPS 重新分词时把"run 边界突变 + proofErr 消失"理解为重新换行点
 - 影响：脱敏后 docx 视觉段落错乱（line break 错位），spy 截图显示合同正文行间距完全错乱
@@ -255,7 +255,7 @@ npx eslint src --ext .ts,.tsx 2>&1 | tail -10
 **检查清单**（任何"修改 [runStart, runEnd) 区间"的代码）：
 - [ ] 区间内非 `<w:r>` 的 sibling 元素（`<w:proofErr/>`、`<w:bookmarkStart/>`、`<w:hyperlink>` 等）是否被提取保留？
 - [ ] OOXML schema 验证：`<w:p>` 直接子元素只允许 `<w:r>` / `<w:hyperlink>` / 段落级 sibling — 把 sibling 塞进 `<w:r>` 是**非法** XML
-- [ ] 跑真实 spy docx（SAMPLE-CO-Z 50KB）走 mask→restore 后，mammoth 提取对比 paragraph 数 + line break 数
+- [ ] 跑真实 spy docx（测试科技 50KB）走 mask→restore 后，mammoth 提取对比 paragraph 数 + line break 数
 
 **新测试**：`src/utils/__tests__/FormatPreservationRegression.test.ts` 3 断言（`<w:proofErr>` 保留 / mammoth delta / mammoth 可解析）+ 视觉对比段落结构
 
