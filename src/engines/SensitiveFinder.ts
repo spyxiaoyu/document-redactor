@@ -605,7 +605,7 @@ const ACTION_VERB_TRIGGERS = /(应当|必须|未经|未发生|不视为|代为|�
  *   - "为集团"/"为所有集团" → "为X集团" specific → 拒
  */
 const NARRATIVE_BOUNDARY_VERB_START = /^[且并或向对由经及而再还但若就据如在至从被给把让使致需的]/;
-const NARRATIVE_BOUNDARY_VERB_END = /[且并或向对由为经及而再还但若就据如在至从被给把让使以]$/;
+const NARRATIVE_BOUNDARY_VERB_END = /[且并或向对由经及而再还但若就据如在至从被给把让使以]$/;  // v2 修复（spy — "北京华为科技有限公司" 误杀）：删 "为"，避免误伤真品牌名含 "为"（"华为"/"为群"/"为X集团" 等）
 
 function splitAndEmitBody(
   safeBody: string,
