@@ -157,40 +157,50 @@ export class SensitiveFinder {
           // 第六批 audit：扩展多字 label（上一批只挡 2-3 字短 label，漏了 "联系电话" 等 4 字 label）
           //   NAME regex lookbehind "联系人：" 后 \s* 跨过换行，把下一行 label "联系电话" 4 hanChars 当姓名
           if (/^(?:电话|手机|邮箱|地址|邮编|传真|网址|微信|QQ|微信|联系人|姓名|名字|客户姓名|联系电话|手机号码|电子邮箱|联系地址|电子信箱|联系方式|电子邮件|通讯地址|联系人员|移动电话|办公电话)$/.test(value)) continue;
-          // v3 多姓名续接 FP 兜底（spy smoke test — "联系人：张三、电话" / "张三，本合同" / "蔡明衡，负责本项"）：
+          // v3 多姓名续接 FP 兜底 + 拆分 emit（spy — "联系人：张三、李四" 漏识别 + 真实合同叙述短语 FP）：
           //   regex 续接段贪婪吞 label 后文字或合同叙述短语
-          //   修法：遇到 [、，；] 分隔的多段时，逐段验证，遇坏段就截断到有效前缀
-          //     坏段定义（任一命中即截断）：
-          //       1. 以 "本" 开头（合同指示代词）
-          //       2. 匹配 label 词表（电话/邮箱 等）
-          //       3. 含数字/英文/括号
-          //       4. 以合同动词开头（负责/委托/联系 等叙述短语）
-          //   阈值：仅在含分隔符的多姓名场景触发，单姓名场景不受影响
+          //   修法：多姓名 match 拆成多个独立 SensitiveMatch，每个姓名 1 个
+          //     - 拆分策略：value 按 [、，；] 切段，逐段验证，遇坏段就停
+          //     - 坏段定义：①以"本"开头（合同指示代词）②匹配 label/动词前缀 ③含数字/英文/括号
+          //     - 遇坏段立即停（不继续后续段，避免 1 坏段污染后续）
+          //     - 单姓名场景行为不变（无分隔符 → 不进入这段）
+          //   emit 方式：在 filter 中直接 push 到 matches，独立 start/end，绕过下方默认 push
+          //     → 上游 UI 高亮/脱敏/还原都能按姓名独立处理
           if (/[、，；]/.test(value)) {
-            // 段判断函数
             const isBadSegment = (seg: string): boolean => {
               if (!seg) return true;
               if (/^本/.test(seg)) return true;
               // 段以合同 label/动词开头 → 叙述短语，非姓名
-              // 注意：用前缀匹配（无 $），因为段可能含后续字符（"电话 13000000000" → 段是 "电话"）
               if (/^(?:电话|手机|邮箱|邮件|地址|邮编|传真|网址|微信|QQ|联系人|联系|通讯|办公|电子|负责|委托|代理|代表|协助|处理|管理|跟进|承担)/.test(seg)) return true;
               if (/[0-9a-zA-Z()（）]/.test(seg)) return true;
               return false;
             };
-            // 逐段扫描，遇坏段就停止（保留有效前缀）
-            const parts = value.split(/([、，；])/);  // 保留分隔符
-            let kept = '';
-            for (let i = 0; i < parts.length; i += 2) {
-              const seg = parts[i];
-              if (isBadSegment(seg)) break;
-              const sep = i + 1 < parts.length ? parts[i + 1] : '';
-              const candidate = kept + seg + sep;
-              kept = candidate;
+            // 扫描所有段，收集有效段（遇坏段就停）
+            const validSegments: { text: string; offset: number }[] = [];
+            const segmentRegex = /[^\s、，；]+/g;
+            let segMatch: RegExpExecArray | null;
+            while ((segMatch = segmentRegex.exec(value)) !== null) {
+              if (isBadSegment(segMatch[0])) break;
+              validSegments.push({ text: segMatch[0], offset: segMatch.index });
             }
-            if (!kept) continue;  // 第一段就坏 → 拒
-            // 截断到 kept（移除末尾分隔符；如果末尾分隔符属于"被截断的下一段"也去掉）
-            value = kept.replace(/[、，；]+$/, '');
-            // 截断后 end 自动正确（value 长度变了）
+            // 没收集到任何有效段 → 第一段就坏，整个 match 拒
+            if (validSegments.length === 0) continue;
+            // emit 每个有效段为独立 SensitiveMatch
+            for (const seg of validSegments) {
+              const segStart = start + seg.offset;
+              matches.push({
+                id: generateUUID(),
+                type: rule.type,
+                value: seg.text,
+                start: segStart,
+                end: segStart + seg.text.length,
+                confidence: rule.weight,
+                context: extractContext(text, segStart, 30),
+                blockId: undefined,
+              });
+            }
+            // 跳过下方默认 push（已 emit）
+            continue;
           }
         }
 

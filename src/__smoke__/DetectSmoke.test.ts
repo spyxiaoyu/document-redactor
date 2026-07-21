@@ -41,7 +41,7 @@ describe('detect smoke: 脱敏替换后敏感词识别能力完整', () => {
       ADDRESS: 1,         // 北京地址
       AMOUNT: 1,          // 100,000.00
       AMOUNT_UPPER: 1,    // 壹拾万元整
-      NAME: 1,            // 张三、李四（v3 regex 多姓名续接，1 match 含 2 姓名）
+      NAME: 2,            // 张三、李四（v3 regex 多姓名续接 + post-filter 拆分 emit，2 个独立 match）
     };
 
     for (const [type, expectedCount] of Object.entries(expected)) {
