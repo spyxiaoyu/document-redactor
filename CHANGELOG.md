@@ -54,7 +54,7 @@
 
 ## [0.x] - 2026 早期
 
-迭代期间共 61 个 commits、9 批 spy 真合同 audit，详细 RCA 见 git log。
+迭代期间共 61 个 commits、9 批实战合同 audit，详细 RCA 见 git log。
 早期版本未单独发版。
 
 ---

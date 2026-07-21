@@ -5,7 +5,7 @@
  *   - "税号："、"TIN:"、"税务登记号:" 等其他 label 同理
  *
  * Bug 来源（修复 commit 前）：
- *   <repo-path>/《SAMPLE-CT-001》委托制作合同.docx
+ *   spy 本地 docx fixture（路径未提交，使用方自行替换）
  *   spy 反馈："纳税人识别号：911101053482731061" 整段被识别成 TAX_ID
  *   修复方法：把 (?:纳税人识别号|...)\s*[:：]?\s* 改成 capture group 前缀
  *   让 match[1] = 税号本体（与 SensitiveFinder.ts:69-72 逻辑对齐）

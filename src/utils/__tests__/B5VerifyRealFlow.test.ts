@@ -3,7 +3,7 @@
  * 输出 2 个 docx 给 spy 在 Word/WPS 里手工验证。
  *
  * 跑法：
- *   cd <repo-path>
+ *   cd <本仓库根目录>
  *   npx vitest run src/utils/__tests__/B5VerifyRealFlow.test.ts
  *
  * 输出：

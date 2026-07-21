@@ -10,7 +10,7 @@
 
 ## 技术架构
 
-- **位置**: `<repo-path>`
+- **位置**: `<本仓库根目录>`（仓库名 `document-desensitizer`）
 - **技术栈**: React + TypeScript + Vite
 - **状态管理**: Zustand
 - **持久化**: IndexedDB (Dexie)
@@ -83,7 +83,7 @@
 
 ```bash
 # 启动开发服务器
-cd <repo-path> && npm run dev
+cd <本仓库根目录> && npm run dev
 
 # 构建生产版本
 npm run build

@@ -175,7 +175,7 @@ expect(slices.map(s => s.text).join('')).toBe(text);  // invariant 必跑
 
 **完整验证脚本**：
 ```bash
-cd <repo-path>
+cd <本仓库根目录>
 npx vitest run 2>&1 | tail -10
 echo "---"
 npm run build 2>&1 | tail -10

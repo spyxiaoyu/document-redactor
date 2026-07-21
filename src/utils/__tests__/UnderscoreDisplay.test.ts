@@ -5,7 +5,7 @@
  *   - 解决 spy's 法务痛点：避免 [COMPANY_0001] 这种"种类划分"在脱敏文件里产生误解
  *
  * 跑法：
- *   cd <repo-path>
+ *   cd <本仓库根目录>
  *   npx vitest run src/utils/__tests__/UnderscoreDisplay.test.ts
  *
  * 输出：
