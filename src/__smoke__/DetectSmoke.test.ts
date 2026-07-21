@@ -8,8 +8,7 @@ import { SensitiveFinder } from '@/engines/SensitiveFinder';
 describe('detect smoke: 脱敏替换后敏感词识别能力完整', () => {
   const text = `甲方：北京示例科技有限公司
 乙方：上海甲乙集团股份有限公司
-联系人：张三
-联系人：李四
+联系人：张三、李四
 电话：13800000000 / 01000000000
 邮箱：li@test-corp.com / wang@example-corp.com
 身份证：110101199003078888
@@ -18,7 +17,7 @@ describe('detect smoke: 脱敏替换后敏感词识别能力完整', () => {
 合同号：SAMPLE-CT-2024-001 兹有...
 地址：北京市海淀区中关村大街1号
 项目编号：SAMPLE-A-001
-金额：100,000.00 元整（大写：壹拾万元整）
+金额：人民币 100,000.00 元整（大写：壹拾万元整）
 开户行：中国工商银行北京分行 0200025609200013713`;
 
   it('13 类敏感词全识别（不会因脱敏替换而漏识别）', () => {
@@ -42,7 +41,7 @@ describe('detect smoke: 脱敏替换后敏感词识别能力完整', () => {
       ADDRESS: 1,         // 北京地址
       AMOUNT: 1,          // 100,000.00
       AMOUNT_UPPER: 1,    // 壹拾万元整
-      NAME: 2,            // 张三 + 李四
+      NAME: 1,            // 张三、李四（v3 regex 多姓名续接，1 match 含 2 姓名）
     };
 
     for (const [type, expectedCount] of Object.entries(expected)) {

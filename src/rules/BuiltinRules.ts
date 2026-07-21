@@ -87,7 +87,7 @@ export const BUILTIN_RULES: BuiltinRuleDefinition[] = [
   },
   {
     type: 'AMOUNT',
-    pattern: /(?:(?:价格|金额|总计|合计|付款|收款|工资|月薪|年薪|费用|报价)[：:\s]*)\b\d+(?:[,，]\d{3})*(?:\.\d{1,2})?(?:\s*元)?|(?:¥|￥|\$|€|£|USD|CNY|RMB|HKD|JPY)\s*\d+(?:[,，]\d{3})*(?:\.\d{1,2})?(?:\s*(?:元|万|千|美元|欧元|英镑|港币|日圆))?/gi,
+    pattern: /(?:(?:价格|金额|总计|合计|付款|收款|工资|月薪|年薪|费用|报价|人民币)[：:\s]*)\b\d+(?:[,，]\d{3})*(?:\.\d{1,2})?(?:\s*元)?|(?:¥|￥|\$|€|£|USD|CNY|RMB|HKD|JPY)\s*\d+(?:[,，]\d{3})*(?:\.\d{1,2})?(?:\s*(?:元|万|千|美元|欧元|英镑|港币|日圆))?/gi,
     weight: 0.80,
     description: '小写金额'
   },
@@ -187,7 +187,16 @@ export const BUILTIN_RULES: BuiltinRuleDefinition[] = [
     //     3. 分隔符必须存在（去掉 ?）— 避免 lookbehind 短路匹配导致 "为" 被吞入姓名（如 "联系人为张三" → "为张三"）
     //   注意：必须用 capture group 形式确保分隔符被 lookbehind 消费（不让 "为" 进入 capture）
     //   回归保护：现有 "联系人："/"姓名：" 等 5+ label 行为不变
-    pattern: /(?<=姓名\s*[:：是为]\s*|名字\s*[:：是为]\s*|客户姓名\s*[:：是为]\s*|联系人\s*[:：是为]\s*|项目负责人\s*[:：是为]\s*)[\u4e00-\u9fa5]{2,4}/g,
+    // v3 修复（spy smoke test — "联系人：张三、李四" 漏识别"李四"）：
+//   原 regex 只 match label 直后 1 个姓名，多姓名用 "、" / "，" / "；" 分隔时第 2+ 个姓名无 label 锚定 → 漏
+//   修法：match 后追加续接段 `(?:[、，；]\s*[\u4e00-\u9fa5]{2,4})*` + SensitiveFinder post-filter 切分验证
+//   FP 控制（post-filter 在 SensitiveFinder.ts）：
+//     - 段不以"本"开头
+//     - 段不匹配 label 词表（电话/邮箱/地址 等常见 label）
+//     - 段不包含数字 / 英文 / 括号
+//     - 段不以合同动词开头（负责/委托/联系 等叙述词）
+//   回归保护：单姓名场景行为不变（continuation 0 iter）
+    pattern: /(?<=姓名\s*[:：是为]\s*|名字\s*[:：是为]\s*|客户姓名\s*[:：是为]\s*|联系人\s*[:：是为]\s*|项目负责人\s*[:：是为]\s*)[\u4e00-\u9fa5]{2,4}(?:[、，；]\s*[\u4e00-\u9fa5]{2,4})*/g,
     weight: 0.85,
     description: '中文姓名'
   }
