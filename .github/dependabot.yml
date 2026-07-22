@@ -1,0 +1,33 @@
+version: 2
+updates:
+  - package-ecosystem: "npm"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "09:00"
+      timezone: "Asia/Shanghai"
+    open-pull-requests-limit: 5
+    commit-message:
+      prefix: "deps"
+      include: "scope"
+    labels:
+      - "dependencies"
+      - "automated"
+    # 豁免：dependencies 字段加 ignore 让 dependabot 不自动升
+    # 主要依赖（mammoth / pdf-lib / xlsx / tesseract.js）大版本变更需人工验证
+    ignore:
+      - dependency-name: "mammoth"
+        update-types: ["version-update:semver-major"]
+      - dependency-name: "pdf-lib"
+        update-types: ["version-update:semver-major"]
+      - dependency-name: "xlsx"
+        update-types: ["version-update:semver-major"]
+      - dependency-name: "tesseract.js"
+        update-types: ["version-update:semver-major"]
+      - dependency-name: "vite"
+        update-types: ["version-update:semver-major"]
+      - dependency-name: "vitest"
+        update-types: ["version-update:semver-major"]
+      - dependency-name: "@testing-library/*"
+        update-types: ["version-update:semver-major"]
