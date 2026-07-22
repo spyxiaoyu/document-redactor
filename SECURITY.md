@@ -35,7 +35,7 @@
 或者更彻底：
 
 ```bash
-git clone https://github.com/<user>/document-desensitizer
+git clone https://github.com/spyxiaoyu/document-desensitizer
 cd document-desensitizer
 grep -r "fetch\|axios\|XMLHttpRequest" src/   # 应该只命中 IndexedDB wrapper
 ```
