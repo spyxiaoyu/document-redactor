@@ -22,7 +22,8 @@
 #   - 命令字面不含 PII（不直接 grep 真实真名/真电话/真公司等真实值）
 #   - 真 PII 字面仍在 scripts/check-pii.sh 内部 PATTERNS 数组（scripts/ 豁免，trade-off 已记 PII_REWRITE_LOG §5.3）
 
-set -uo pipefail
+set -o pipefail
+# 不加 -u：FILES 数组可能为空（无参数扫 git staged），避免 unbound variable 报错
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 CHECK_PII="$SCRIPT_DIR/check-pii.sh"
@@ -66,6 +67,7 @@ filter_quiet() {
 # 跑 check-pii.sh
 RAW_OUTPUT_FILE=$(mktemp)
 RAW_EXIT=0
+# 透传位置参数（去掉 -q/-c/-h 等选项，check-pii.sh 不认识它们）
 bash "$CHECK_PII" "${FILES[@]}" > "$RAW_OUTPUT_FILE" 2>&1 || RAW_EXIT=$?
 
 case "$MODE" in
