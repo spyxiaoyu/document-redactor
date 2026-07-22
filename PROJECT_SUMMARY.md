@@ -10,7 +10,7 @@
 
 ## 技术架构
 
-- **位置**: `<本仓库根目录>`（仓库名 `document-desensitizer`）
+- **位置**: `<本仓库根目录>`（仓库名 `document-redactor`）
 - **技术栈**: React + TypeScript + Vite
 - **状态管理**: Zustand
 - **持久化**: IndexedDB (Dexie)

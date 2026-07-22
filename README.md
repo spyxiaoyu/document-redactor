@@ -37,13 +37,13 @@
 
 ### 在线试用
 
-> 🚧 GitHub Pages 部署中。访问 `https://spyxiaoyu.github.io/document-desensitizer` （首次启用 Pages 后生效）。
+> 🚧 GitHub Pages 部署中。访问 `https://spyxiaoyu.github.io/document-redactor` （首次启用 Pages 后生效）。
 
 ### 本地开发
 
 ```bash
-git clone https://github.com/spyxiaoyu/document-desensitizer
-cd document-desensitizer
+git clone https://github.com/spyxiaoyu/document-redactor
+cd document-redactor
 npm install
 npm run dev          # 浏览器打开 http://localhost:5173
 ```

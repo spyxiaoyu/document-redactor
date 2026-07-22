@@ -12,7 +12,7 @@
 
 ## 1. 背景
 
-`document-desensitizer` 是 spy 的中文法务 / 合同脱敏工具。在 [REDACTED commit-A] "security: desensitize 33 files"（2026-07-21）之前，git history 中部分 commit 含真合同 PII：
+`document-redactor` 是 spy 的中文法务 / 合同脱敏工具。在 [REDACTED commit-A] "security: desensitize 33 files"（2026-07-21）之前，git history 中部分 commit 含真合同 PII：
 
 | 旧 commit hash | PII 类别（不显示字面） | 涉及的脱敏工具 |
 |---|---|---|

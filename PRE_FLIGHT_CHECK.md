@@ -2,7 +2,7 @@
 
 > **任何一项 ❌ = 不允许报告完成。必须先修复再交付。**
 >
-> 这份清单来自 project `document-desensitizer` 所有已经踩过的坑（commit `0658bc1` → `0d0dcf2`），
+> 这份清单来自 project `document-redactor` 所有已经踩过的坑（commit `0658bc1` → `0d0dcf2`），
 > 每次新 bug 出现都要追加一条新检查项。**改完代码 ≠ 修完 bug**。
 
 ---

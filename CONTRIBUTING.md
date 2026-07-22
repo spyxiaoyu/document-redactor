@@ -5,8 +5,8 @@
 ## 本地开发
 
 ```bash
-git clone https://github.com/spyxiaoyu/document-desensitizer
-cd document-desensitizer
+git clone https://github.com/spyxiaoyu/document-redactor
+cd document-redactor
 npm install
 npm run dev          # 浏览器打开 http://localhost:5173
 ```
