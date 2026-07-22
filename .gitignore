@@ -10,3 +10,8 @@ coverage/
 # 测试 fixtures：含真合同，gitignore 内容（.gitkeep 保留）
 test-fixtures/*
 !test-fixtures/.gitkeep
+
+# scripts/__fixtures__：probe fixture 已删，保留 .gitkeep 防 git 报空目录
+# scripts/__tests__/ 不屏蔽（check-pii.test.ts 是通用测试代码，必须 push）
+scripts/__fixtures__/*
+!scripts/__fixtures__/.gitkeep

@@ -17,14 +17,39 @@ npm run dev          # 浏览器打开 http://localhost:5173
 bash scripts/setup-hooks.sh
 ```
 
-这会安装 `.git/hooks/pre-commit`，自动跑 `scripts/check-pii.sh` 拦截 17 类 PII pattern。
+这会安装 `.git/hooks/pre-commit`，自动跑 `scripts/check-pii.sh` 拦截 12 类通用 PII 正则。
 
 > ⚠️ 跳过机制：`SKIP_PII_CHECK=1 git commit ...` 仅用于紧急发版，**不应日常使用**。
+
+## 本机增强拦截（可选）
+
+`scripts/check-pii.sh` 默认只拦截 12 类通用 PII 正则（手机号/身份证/银行卡/邮箱/IPv4/合同号/大写金额/公司名后缀/姓名 label 限定/地址 label 限定/项目名 label 限定/TAX_ID label 限定）。
+
+如果你想在本机额外拦截**特定公司字典**（如你自己行业的特定甲方/乙方代号）或**特定合同名前缀**，可以在用户主目录创建外挂字典文件：
+
+```bash
+mkdir -p ~/.pii-local
+cat > ~/.pii-local/extra-patterns.txt << 'EOF'
+# 每行一个 pattern（字面或正则）
+# 例：拦截特定公司字典（替换为你的实际公司代号）
+SAMPLE-COMPANY-A
+SAMPLE-COMPANY-B
+# 例：拦截特定合同名前缀
+SAMPLE-PRIVATE-CT-
+EOF
+```
+
+`scripts/check-pii.sh` 启动时会自动读取 `~/.pii-local/extra-patterns.txt`，每行追加为一个 PATTERN。文件不存在时静默跳过。
+
+> **设计权衡**：通用正则 vs 个人字典
+> - ✅ 通用正则：clone 仓库就能用，不依赖个人配置
+> - ✅ 个人字典：本机专属拦截能力，不污染仓库
+> - ⚠️ 个人字典不入仓库，clone 后默认只有通用拦截——这是有意设计，避免 spy 个人 PII 字面泄漏到公开仓库
 
 ## 跑测试
 
 ```bash
-npm test              # 全套 vitest（当前 393+ 个测试）
+npm test              # 全套 vitest（当前 413+ 个测试）
 npm run test:watch    # 监听模式
 npm run lint          # ESLint
 npm run build         # tsc + vite build（必须 0 errors）
@@ -73,8 +98,8 @@ npm test && npm run build && npm run lint
 security: desensitize 33 files
 
 - 替换 24 unique 真 PII 字符串为占位符（SAMPLE-CT-NNN / SAMPLE-CO-X / 张某某）
-- pre-commit hook 增加 17 类 pattern
-- scripts/ 目录豁免（工具代码自身含 PATTERN 字面）
+- pre-commit hook 增加 12 类通用 PII 正则
+- scripts/ 目录豁免（工具代码自身含通用正则 PATTERN 字面）
 ```
 
 ## 报 FP / FN（最有价值的贡献）
@@ -105,10 +130,13 @@ src/
 └── pages/         # 路由页面
 
 scripts/
-├── check-pii.sh              # pre-commit PII 拦截器（17 类 pattern）
+├── check-pii.sh              # pre-commit PII 拦截器（12 类通用正则 + 本机外挂字典）
+├── scan-pii.sh               # PII 扫描 wrapper（保护 shell history / scrollback）
 ├── setup-hooks.sh            # 安装 pre-commit hook
-├── __tests__/                # check-pii.sh 的契约测试
-└── __fixtures__/piy-self.ts  # scripts/ 豁免的 probe fixture
+└── __tests__/                # check-pii.sh 的契约测试（17 个用例）
+
+# scripts/__fixtures__/ 探针 fixture 已删除（通用化后不需要）
+# 留 .gitkeep 保目录存在
 ```
 
 ## 进阶文档

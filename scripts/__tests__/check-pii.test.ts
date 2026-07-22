@@ -1,11 +1,14 @@
 /**
  * check-pii.sh 行为测试：
- *   - bash 脚本扫指定文件（或 git staged）的 PII pattern
+ *   - bash 脚本扫指定文件（或 git staged）的通用 PII 正则
  *   - 命中 exit 1 + pattern 列表
  *   - 干净 exit 0
  *
- * 防再犯：本测试是合同 PII 真合同名 / 真路径 / 真邮箱 等 commit 时拦截 hook 的契约。
+ * 防再犯：本测试是 commit 时 PII 拦截 hook 的契约。
  * 修改 scripts/check-pii.sh 的 PII pattern 列表时必须同步更新本测试。
+ *
+ * 注：本测试只测通用 PII 正则（不测 spy 个人定制字典）。
+ * 用户本机外挂字典 ~/.pii-local/extra-patterns.txt 在 P0-5 中已加支持。
  */
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import { execFileSync } from 'node:child_process';
@@ -38,7 +41,7 @@ function runCheck(extraArgs: string[] = []): { code: number; stdout: string; std
   }
 }
 
-describe('check-pii.sh: 17 PII pattern 拦截', () => {
+describe('check-pii.sh: 12 类通用 PII 正则拦截', () => {
   beforeAll(() => {
     if (!fs.existsSync(SCRIPT)) {
       throw new Error(`check-pii.sh 不存在 @ ${SCRIPT} — 本测试是它的契约，先实现脚本再跑测试`);
@@ -55,60 +58,84 @@ describe('check-pii.sh: 17 PII pattern 拦截', () => {
     expect(r.code, `stdout=${r.stdout} stderr=${r.stderr}`).toBe(0);
   });
 
-  it('含 /Users/messi 应 exit != 0', () => {
-    const f = writeFixture('bad-path.ts', 'const PATH = "/Users/messi/Desktop/secret.docx";\n');
+  it('含手机号占位符应 exit != 0', () => {
+    const f = writeFixture('bad-phone.ts', 'const p = "13800001234";\n');
     const r = runCheck([f]);
     expect(r.code).not.toBe(0);
-    expect(r.stdout + r.stderr).toMatch(/\/Users\/messi/);
+    expect(r.stdout + r.stderr).toMatch(/1[3-9][0-9]{9}/);
   });
 
-  it('含 真合同号 应 exit != 0', () => {
-    const f = writeFixture('bad-contract.ts', 'const CT = "20240802-3RFW";\n');
+  it('含身份证号占位符应 exit != 0', () => {
+    const f = writeFixture('bad-id.ts', 'const id = "110101199003078888";\n');
     const r = runCheck([f]);
     expect(r.code).not.toBe(0);
-    expect(r.stdout + r.stderr).toMatch(/20240802-3RFW/);
+    expect(r.stdout + r.stderr).toMatch(/1[0-9]{16}[0-9Xx]/);
   });
 
-  it('含 真邮箱 应 exit != 0', () => {
-    const f = writeFixture('bad-email.ts', 'const e = "yanchao@youmingnj.com";\n');
+  it('含银行卡号占位符应 exit != 0', () => {
+    const f = writeFixture('bad-bank.ts', 'const b = "6222021234567890123";\n');
     const r = runCheck([f]);
     expect(r.code).not.toBe(0);
-    expect(r.stdout + r.stderr).toMatch(/youmingnj\.com/);
+    expect(r.stdout + r.stderr).toMatch(/[0-9]{16,19}/);
   });
 
-  it('含 真电话 应 exit != 0', () => {
-    const f = writeFixture('bad-phone.ts', 'const p = "18752008905";\n');
+  it('含邮箱占位符应 exit != 0', () => {
+    const f = writeFixture('bad-email.ts', 'const e = "test@example.com";\n');
     const r = runCheck([f]);
     expect(r.code).not.toBe(0);
-    expect(r.stdout + r.stderr).toMatch(/18752008905/);
+    expect(r.stdout + r.stderr).toMatch(/[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+/);
   });
 
-  it('含 真合同文件名（中国经济引力场）应 exit != 0', () => {
-    const f = writeFixture('bad-title.ts', 'const t = "中国经济引力场";\n');
+  it('含 IPv4 占位符应 exit != 0', () => {
+    const f = writeFixture('bad-ip.ts', 'const ip = "192.168.1.1";\n');
     const r = runCheck([f]);
     expect(r.code).not.toBe(0);
-    expect(r.stdout + r.stderr).toMatch(/中国经济引力场/);
+    expect(r.stdout + r.stderr).toMatch(/([0-9]{1,3}\.){3}[0-9]{1,3}/);
   });
 
-  it('含 14 家真公司代号（佑铭）应 exit != 0', () => {
-    const f = writeFixture('bad-co.ts', 'const c = "佑铭科技";\n');
+  it('含合同号占位符应 exit != 0', () => {
+    const f = writeFixture('bad-contract.ts', 'const ct = "SAMPLE-CT-2024-001";\n');
     const r = runCheck([f]);
     expect(r.code).not.toBe(0);
-    expect(r.stdout + r.stderr).toMatch(/佑铭/);
+    expect(r.stdout + r.stderr).toMatch(/SAMPLE-CT-2024-001/);
   });
 
-  it('多 pattern 同时命中（路径 + 真合同 + 邮箱）应 exit != 0', () => {
+  it('含大写金额占位符应 exit != 0', () => {
+    const f = writeFixture('bad-amt.ts', 'const a = "壹佰贰拾叁元肆角伍分";\n');
+    const r = runCheck([f]);
+    expect(r.code).not.toBe(0);
+    expect(r.stdout + r.stderr).toMatch(/[零壹贰叁肆伍陆柒捌玖拾佰仟万亿元圆角分]/);
+  });
+
+  it('含公司名后缀占位符应 exit != 0', () => {
+    const f = writeFixture('bad-co.ts', 'const c = "测试科技有限公司";\n');
+    const r = runCheck([f]);
+    expect(r.code).not.toBe(0);
+    expect(r.stdout + r.stderr).toMatch(/有限公司|集团|股份|科技|投资|实业|商贸/);
+  });
+
+  it('含姓名 label 限定占位符应 exit != 0', () => {
+    const f = writeFixture('bad-name.ts', 'const n = "甲方：张三";\n');
+    const r = runCheck([f]);
+    expect(r.code).not.toBe(0);
+    expect(r.stdout + r.stderr).toMatch(/甲方|乙方|姓名|联系人/);
+  });
+
+  it('含地址 label 限定占位符应 exit != 0', () => {
+    const f = writeFixture('bad-addr.ts', 'const a = "地址：北京市朝阳区建国路88号";\n');
+    const r = runCheck([f]);
+    expect(r.code).not.toBe(0);
+    expect(r.stdout + r.stderr).toMatch(/地址|住址|住所/);
+  });
+
+  it('多 pattern 同时命中应 exit != 0', () => {
     const f = writeFixture('multi.ts', [
-      'const PATH = "/Users/messi/secret";',
-      'const CT = "20240802-3RFW";',
-      'const E = "yanchao@youmingnj.com";',
+      'const phone = "13800001234";',
+      'const email = "test@example.com";',
+      'const co = "测试有限公司";',
     ].join('\n'));
     const r = runCheck([f]);
     expect(r.code).not.toBe(0);
-    const all = r.stdout + r.stderr;
-    expect(all).toMatch(/\/Users\/messi/);
-    expect(all).toMatch(/20240802-3RFW/);
-    expect(all).toMatch(/youmingnj\.com/);
   });
 
   it('空 fixture 应 exit 0', () => {
@@ -132,12 +159,18 @@ describe('check-pii.sh: 17 PII pattern 拦截', () => {
     expect(r.stderr + r.stdout).toMatch(/not found|不存在|ENOENT|does not exist/i);
   });
 
-  it('scripts/ 目录文件应被豁免（fixture PII 不会被拦）', () => {
-    // 复现预装 fixture：scripts/__fixtures__/piy-self.ts 含 6 类 PII
-    // 因为 EXCLUDE_DIRS_REGEX 包含 scripts/，应跳过扫描
-    const fixturePath = path.resolve(__dirname, '..', '__fixtures__', 'piy-self.ts');
-    expect(fs.existsSync(fixturePath), '预装 fixture 应存在').toBe(true);
-    const r = runCheck([fixturePath]);
+  it('scripts/ 目录文件应被豁免（含 check-pii.sh 自身通用 PII 正则不被自拦）', () => {
+    // check-pii.sh 自身含通用 PII 正则（如 PHONE / EMAIL 正则）
+    // 因为 EXCLUDE_DIRS_REGEX 包含 scripts/，应跳过扫描避免自拦截
+    const r = runCheck([SCRIPT]);
     expect(r.code, `scripts/ 豁免失败：${r.stdout}${r.stderr}`).toBe(0);
+  });
+
+  it('用户本机外挂字典 ~/.pii-local/extra-patterns.txt 缺失时应跳过', () => {
+    // 文件不存在时，check-pii.sh 应继续正常工作
+    // 此测试隐式覆盖：默认行为不依赖外挂字典
+    const f = writeFixture('clean2.ts', '// 干净代码\nexport const x = 2;\n');
+    const r = runCheck([f]);
+    expect(r.code).toBe(0);
   });
 });

@@ -19,35 +19,51 @@
 
 set -uo pipefail
 
-# —— PII pattern 列表（17 类）——
-# 注：脚本自身也是被扫的文件，所以下面字面字符串会在 self-scan 时命中。
-# --self-exclude 开关控制（默认排除）。修改 pattern 时记得同步更新本注释。
+# —— PII pattern 列表（12 类通用正则）——
+#
+# 注：本脚本设计为"通用 PII 拦截器"——不含任何用户真实 PII 字面。
+# 拦截覆盖：
+#   1. PHONE         中国大陆手机号 11 位
+#   2. ID_CARD       18 位身份证（含末位 X/x）
+#   3. BANK_CARD     16-19 位银行卡
+#   4. EMAIL         标准 email 格式
+#   5. IP            IPv4（0-255 边界由调用者语义保证）
+#   6. CONTRACT_NO   标准合同号格式（前缀-年-月-序号 或 类似）
+#   7. AMOUNT_UPPER  大写金额（零壹贰叁...圆角分）
+#   8. COMPANY       中文公司名后缀（有限公司/集团/股份/科技/投资/实业/商贸）
+#   9. NAME          中文姓名 label 限定（姓名/联系人/甲方/乙方/经办人 等）
+#   10. ADDRESS      中文地址 label 限定（地址/住址/联系地址 等）
+#   11. PROJECT_NAME 项目名称 label 限定（项目名称/工程名称 等）
+#   12. TAX_ID       纳税人识别号 label 限定（税号/统一社会信用代码 等）
+#
+# 用户本机想要"个人定制拦截"（特定公司字典、特定合同名）时：
+#   在 ~/.pii-local/extra-patterns.txt 加额外 PATTERN（每行一个字面或正则）
+#   本脚本自动追加到 PII_PATTERNS 后（详见 CONTRIBUTING.md §本机增强拦截）
+#
+# 修改本列表时记得同步更新 scripts/__tests__/check-pii.test.ts。
 PII_PATTERNS=(
-  '/Users/messi'                          # username 路径（任何出现）
-  '中国经济引力场'                         # 真合同文件名（央视节目真名）
-  '走进甲乙'                              # 真合同简称
-  '20240802-3RFW'                         # 真合同号 1
-  '20210128方太'                          # 真合同号 2
-  'K-BJYM-TM-20240802-001'                # 真合同号 3
-  '佑铭'                                  # 公司 1
-  '方太集团'                              # 公司 2
-  '茅台集团'                              # 公司 3
-  '习酒公司'                              # 公司 4
-  '蓝月亮'                                # 公司 5
-  '站酷Zcool\|站酷'                       # 公司 6
-  '示例'                                # 公司 7
-  '中视传媒'                              # 公司 8
-  '千千手'                                # 公司 9
-  '小田仙人'                              # 公司 10
-  '酪神世家'                              # 公司 11
-  '千秋岁月'                              # 公司 12
-  '五粮液集团'                            # 公司 13
-  '央视财经'                              # 公司 14
-  'youmingnj\.com'                        # 真邮箱 1
-  'walk-on\.com'                          # 真邮箱 2
-  '18752008905'                           # 真电话
-  '颜超'                                  # 真联系人
+  '\b1[3-9][0-9]{9}\b'                                                          # 1. PHONE
+  '\b[0-9]{17}[0-9Xx]\b'                                                        # 2. ID_CARD
+  '\b[0-9]{16,19}\b'                                                            # 3. BANK_CARD
+  '[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}'                              # 4. EMAIL
+  '\b([0-9]{1,3}\.){3}[0-9]{1,3}\b'                                             # 5. IP
+  '\b[A-Z]{1,5}-[A-Z0-9-]{2,}-[A-Z0-9-]{2,}\b'                                  # 6. CONTRACT_NO
+  '[零壹贰叁肆伍陆柒捌玖拾佰仟万亿元圆角分]{4,}'                                 # 7. AMOUNT_UPPER
+  '[一-龥]+(有限公司|集团|股份|科技|投资|实业|商贸|分公司)'                        # 8. COMPANY
+  '(姓名|联系人|甲方|乙方|丙方|经办人|法人|代表)[[:space:]:：]+[一-龥]{2,4}'        # 9. NAME (label 限定)
+  '(地址|住址|住所|联系地址)[[:space:]:：]+[一-龥0-9]+'                            # 10. ADDRESS (label 限定)
+  '(项目名称|工程名称|项目|工程)[[:space:]:：]+[一-龥0-9A-Za-z]+'                  # 11. PROJECT_NAME (label 限定)
+  '(纳税人识别号|税号|统一社会信用代码)[[:space:]:：]+[A-Z0-9]{15,20}'             # 12. TAX_ID (label 限定)
 )
+
+# —— 用户本机外挂字典（可选）——
+# 文件不存在或为空时跳过；存在时每行追加为一个 pattern（字面或正则）
+PII_LOCAL_FILE="${HOME}/.pii-local/extra-patterns.txt"
+if [ -f "$PII_LOCAL_FILE" ]; then
+  while IFS= read -r line; do
+    [ -n "$line" ] && PII_PATTERNS+=("$line")
+  done < "$PII_LOCAL_FILE"
+fi
 
 # ——— 主流程 ———
 
@@ -77,9 +93,8 @@ fi
 
 # 2. 排除
 # - 目录级：node_modules / dist / coverage / .vite / test-fixtures (gitignore 已隐式排除)
-# - 目录级：scripts/ —— 工具代码自身 (check-pii.sh 含 PATTERNS 字面) + 测试 fixture
-#   故意含 PII 字面字符串作反例。trade-off：未来 scripts/ 新增工具脚本若含真合同
-#   PII 不会被拦截，spy 应在 commit 时人工 review 工具脚本（commit message 注明）
+# - 目录级：scripts/ —— 工具代码自身 (check-pii.sh 含通用正则 PATTERN 字面)
+#   + 测试 fixture（占位符测试）。scripts/ 不被本工具自身扫描，避免自拦截。
 EXCLUDE_DIRS_REGEX='(^|/)(node_modules|dist|coverage|\.vite|test-fixtures|scripts)(/|$)'
 
 # 3. 命中跟踪
@@ -107,7 +122,7 @@ for file in "${TARGETS[@]}"; do
     continue
   fi
 
-  # 自排除：本脚本自身（自身含 'youmingnj' 等字面字符串作为 pattern list）
+  # 自排除：本脚本自身（自身含通用 PII 正则作为 pattern list，避免自拦截）
   real_file=$(realpath -m -- "$file" 2>/dev/null || echo "$file")
   real_self=$(realpath -m -- "$0" 2>/dev/null || echo "$0")
   if [ "$real_file" = "$real_self" ]; then
@@ -151,10 +166,12 @@ if [ "$PII_HITS" -gt 0 ]; then
   echo "" >&2
   printf '  %s\n' "${HIT_REPORT[@]}" >&2
   echo "" >&2
-  echo "修法：用占位符替换（参考 f716231 / bb73876 commit message）：" >&2
-  echo "  - 真路径 /Users/messi/...  → <本仓库根目录>" >&2
-  echo "  - 真公司名 / 真合同号 / 真邮箱  → 中文合成代号（如 测试科技 / SAMPLE-CT-001 / contact@client-a.test）" >&2
-  echo "  - 真联系人 / 真电话  → 占位（张某某 / 13800000001）" >&2
+  echo "修法建议（用占位符 / 泛化字符串替换）：" >&2
+  echo "  - 真路径 / 真用户名  → <占位符> 或 <repo-path>" >&2
+  echo "  - 真公司名 / 真合同号 / 真邮箱  → 中文合成代号 或 SAMPLE-CT-NNN / SAMPLE-CO-X" >&2
+  echo "  - 真联系人 / 真电话  → 张某某 / 13800000001" >&2
+  echo "" >&2
+  echo "如确需本机拦截特定公司字典，可在 ~/.pii-local/extra-patterns.txt 加 pattern" >&2
   exit 1
 fi
 
