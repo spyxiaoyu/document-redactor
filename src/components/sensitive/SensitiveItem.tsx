@@ -15,6 +15,8 @@ const typeColors: Record<SensitiveType, string> = {
   ID_CARD: 'bg-purple-100 text-purple-800',
   EMAIL: 'bg-green-100 text-green-800',
   BANK_CARD: 'bg-orange-100 text-orange-800',
+  BANK_LABEL: 'bg-lime-100 text-lime-800',
+  BANK_ACCOUNT_LABEL: 'bg-emerald-100 text-emerald-800',
   IP: 'bg-gray-100 text-gray-800',
   AMOUNT: 'bg-yellow-100 text-yellow-800',
   AMOUNT_UPPER: 'bg-amber-100 text-amber-800',
@@ -24,6 +26,7 @@ const typeColors: Record<SensitiveType, string> = {
   COMPANY: 'bg-cyan-100 text-cyan-800',
   NAME: 'bg-rose-100 text-rose-800',
   TAX_ID: 'bg-red-100 text-red-800',
+  URL: 'bg-sky-100 text-sky-800',
   CUSTOM: 'bg-muted text-muted-foreground',
 };
 

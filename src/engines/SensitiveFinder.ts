@@ -459,6 +459,14 @@ if (!formMatch) continue;
           //   - 例外检查："公司之家公司" / "公司之家集团" 等假设公司名 body 以"公司"开头 — 极少见
           if (/^(?:公司|集团|子公司)[\u4e00-\u9fa5]{3,}/.test(safeBody) && /(?:登记|事项|需要|根据|修改|应|或者|以|且|并|或者)/.test(safeBody)) continue;
 
+          // 十二次检查：safeBody 以 "的代理/的委托/的代表" 结尾 → 拒（spy 2026-07-26 截图反馈）
+          //   - "作为甲方的代理公司" → body "作为甲方的代理" 以 "的代理" 结尾 → 叙述短语（"X的Y公司"结构指代关系，非具体公司名）
+          //   - "乙方的委托代表公司" 同理
+          //   - regex lookbehind (?<!代理) 帮不上：这里 "代理" 在 body 内部（match 中段），不在 match 左边界
+          //   - mid-verb SPLIT 帮不上：body 7 chars < 18 阈值
+          //   - 真公司名不以 "的代理/的委托/的代表" 结尾（"智能代理" 不带 "的" → 不误伤 case 1b-3）
+          if (/的(?:委托)?(?:代理|委托|代表)$/.test(safeBody)) continue;
+
           // 三次检查：mid-verb 防御（zcool docx [116-144] FP 修复）
           //   - "X公司委托Y公司" / "X公司代理Y公司" / "X公司代表Y公司"
           //     regex greedy 把两家公司合成一个超长 body+form → 28 chars 错配

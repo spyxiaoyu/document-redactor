@@ -3,6 +3,8 @@ export type SensitiveType =
   | 'ID_CARD'
   | 'EMAIL'
   | 'BANK_CARD'
+  | 'BANK_LABEL'        // 开户银行（含支行/分行） — spy 2026-07-26 截图反馈漏识别
+  | 'BANK_ACCOUNT_LABEL' // 银行账号 label 限定（12-21 位）— spy 2026-07-26 截图反馈漏识别
   | 'IP'
   | 'AMOUNT'
   | 'AMOUNT_UPPER'
@@ -12,6 +14,7 @@ export type SensitiveType =
   | 'COMPANY'
   | 'NAME'
   | 'TAX_ID'
+  | 'URL'               // 网址（http/https/www/裸域名）— spy 2026-07-26 反馈
   | 'CUSTOM';
 
 export interface SensitiveMatch {

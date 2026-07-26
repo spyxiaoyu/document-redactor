@@ -80,6 +80,19 @@ export const BUILTIN_RULES: BuiltinRuleDefinition[] = [
     description: '银行卡号'
   },
   {
+    type: 'BANK_ACCOUNT_LABEL',
+    // 2026-07-26 spy 截图反馈：合同收款信息表格 "银行账号：15位数字" 没识别
+    //   BANK_CARD regex 限 16-21 位纯数字，15 位落不进（部分对公账号、银行流水号都是 12-15 位）
+    //   修法：label 限定 12-21 位数字（label 锚定 FP 风险低）
+    //   label alt：银行账号 / 账号 / 账户 / 帐号 / 收款账号 / 付款账号
+    //   数字范围 12-21 位（兼容对公账号 12-19 位常见形态）
+    //   规则位置在 BANK_CARD 之后：16-21 位纯数字 BANK_CARD 先入 matches array → 合并时 BANK_CARD 优先
+    //   → 真银行卡号不会被 BANK_ACCOUNT_LABEL 抢匹配
+    pattern: /(?:银行账号|银行帐号|账号|帐号|账户|收款账号|付款账号|收款账户|付款账户)\s*[:：]?\s*([0-9]{12,21})/g,
+    weight: 0.92,
+    description: '银行账号(label 限定)'
+  },
+  {
     type: 'IP',
     pattern: /\b(?:(?:25[0-5]|2[0-4]\d|[01]?\d\d?)\.){3}(?:25[0-5]|2[0-4]\d|[01]?\d\d?)\b/g,
     weight: 0.85,
@@ -177,6 +190,23 @@ export const BUILTIN_RULES: BuiltinRuleDefinition[] = [
     description: '公司名称(集团简称)'
   },
   {
+    type: 'BANK_LABEL',
+    // 2026-07-26 spy 截图反馈：合同收款信息表格 "开户银行：XX银行XX支行" 没识别
+    //   BANK_CARD 只吃数字；ADDRESS 要 5 大城市或"X省"开头，"广州"不在白名单
+    //   修法：label 限定 + 中文/数字 + 可选支行/分行/营业部/总行后缀
+    //   label alt：开户银行 / 开户行 / 收款银行
+    //   银行名 body 4-30 字（"招商银行广州体育东路支行" = 12 字）
+    //
+    //   规则位置在 COMPANY 之后（回归 case 42 保护）：
+    //     "开户行：<某国有大行完整公司名>"（CompanyRecognition case 42）既是 BANK_LABEL
+    //     又是 COMPANY 完整形态 → COMPANY 先入 matches array
+    //     → merge 同范围保留先入 → COMPANY 优先
+    //     BANK_LABEL 只兜 COMPANY 吃不到的 "XX银行XX支行"（无公司 form 后缀）形态
+    pattern: /(?:开户银行|开户行|收款银行)\s*[:：]?\s*([\u4e00-\u9fa50-9]{4,30}(?:支行|分行|营业部|总行)?)/g,
+    weight: 0.85,
+    description: '开户银行(label 限定)'
+  },
+  {
     type: 'NAME',
     // v2 修复（spy audit batch #7 — 戊己合同 "项目负责人为蔡明衡" 漏识别）：
     //   原 regex lookbehind 只收 4 个 label（姓名/名字/客户姓名/联系人），真合同"项目负责人"未覆盖
@@ -199,6 +229,25 @@ export const BUILTIN_RULES: BuiltinRuleDefinition[] = [
     pattern: /(?<=姓名\s*[:：是为]\s*|名字\s*[:：是为]\s*|客户姓名\s*[:：是为]\s*|联系人\s*[:：是为]\s*|项目负责人\s*[:：是为]\s*)[\u4e00-\u9fa5]{2,4}(?:[、，；]\s*[\u4e00-\u9fa5]{2,4})*/g,
     weight: 0.85,
     description: '中文姓名'
+  },
+  {
+    type: 'URL',
+    // 2026-07-26 spy 反馈：合同里出现 "https://example.com" / "www.example.com" / "example.com.cn"
+    //   等网址没识别（合同里常引用对方官网、监管平台、第三方平台 URL）
+    //   三段式 alternation：
+    //     A. http(s):// + 域名 + 路径 + 查询（覆盖最常见 URL 形态）
+    //     B. www. + 域名（常见省略协议头的 URL）
+    //     C. 裸域名 + 顶级域（"example.com.cn" / "site.org" 等无 www 也无协议头）
+    //   域名部分：[\w-]+(\.[\w-]+)+ 至少 2 段（防 "abc.com" 误匹配普通词）
+    //   TLD 白名单：com/cn/org/net/io/gov/edu/co/ai/app/me/info/xyz/biz
+    //     （避免误吃普通英文词如 "table.com" 等字典词误判）
+    //   path/query 部分：可选 (/[^\s<>"']+)  — 合同里 URL 常带查询参数
+    //   FP 控制（post-filter 在 SensitiveFinder.ts）：
+    //     - 域名部分必须 ≥ 4 chars（防 "x.cn" 这种 3 字过短）
+    //     - 必须含 . （已 regex 保证）
+    pattern: /(?:https?:\/\/[\w-]+(?:\.[\w-]+)+(?:\/[^\s<>"']*)?|www\.[\w-]+(?:\.[\w-]+)+(?:\/[^\s<>"']*)?|(?<![\w@.])(?:[\w-]+\.)+(?:com|cn|org|net|io|gov|edu|co|ai|app|me|info|xyz|biz|com\.cn|org\.cn|net\.cn|gov\.cn|edu\.cn)(?:\/[^\s<>"']*)?)/gi,
+    weight: 0.85,
+    description: '网址(URL/域名)'
   }
 ];
 
@@ -218,6 +267,8 @@ export const SENSITIVE_TYPE_LABELS: Record<SensitiveType, string> = {
   ID_CARD: '身份证',
   EMAIL: '邮箱',
   BANK_CARD: '银行卡',
+  BANK_LABEL: '开户银行',
+  BANK_ACCOUNT_LABEL: '银行账号',
   IP: 'IP地址',
   AMOUNT: '小写金额',
   AMOUNT_UPPER: '大写金额',
@@ -227,5 +278,6 @@ export const SENSITIVE_TYPE_LABELS: Record<SensitiveType, string> = {
   COMPANY: '公司名称',
   NAME: '姓名',
   TAX_ID: '纳税人识别号',
+  URL: '网址',
   CUSTOM: '自定义'
 };
