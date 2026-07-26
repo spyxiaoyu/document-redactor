@@ -3,6 +3,7 @@ import type { ReactElement } from 'react';
 import { useFileStore } from '@/stores';
 import { FileUploader, FileCard } from '@/components/file';
 import { SensitivePanel } from '@/components/sensitive';
+import { HtmlPreview } from '@/components/preview/HtmlPreview';
 import { SearchResultsPanel, type SearchHit } from '@/components/search';
 import { Button, Input, Modal, Progress } from '@/components/common';
 import { Shield, Download, Lock, RefreshCw, Plus, Search, Check, MousePointer2 } from 'lucide-react';
@@ -50,6 +51,11 @@ export function UploadPage() {
   const [toast, setToast] = useState<string | null>(null);
   const [exportFormat, setExportFormat] = useState<'original' | 'docx' | 'txt'>('original');
   const [addBtnPos, setAddBtnPos] = useState<{ x: number; y: number } | null>(null);
+  // 方案 1（2026-07-26）：原文面板支持「纯文本 / 原版视图」切换
+  //   - text 模式：原逻辑（高亮 + 手动选区 + 搜索同步）
+  //   - html 模式：渲染 mammoth.convertToHtml 已生成的 HTML（表格图片可见，不高亮）
+  //   - 切换不影响脱敏识别 / 导出 / 右面板
+  const [leftViewMode, setLeftViewMode] = useState<'text' | 'html'>('text');
   // 本地镜像 selectedMatches，保证 useMemo/useCallback 拿到最新引用
   const [localSelected, setLocalSelected] = useState<Set<string>>(new Set());
 
@@ -809,6 +815,35 @@ export function UploadPage() {
               <div className="bg-muted/50 px-4 py-2 font-medium flex items-center gap-2">
                 <span>📄</span>
                 <span>原文</span>
+                {/* 方案 1（2026-07-26）：视图切换 tab — text / html */}
+                <div className="ml-2 inline-flex rounded border bg-background" role="tablist" aria-label="原文视图切换">
+                  <button
+                    type="button"
+                    role="tab"
+                    aria-selected={leftViewMode === 'text'}
+                    onClick={() => setLeftViewMode('text')}
+                    className={`px-2 py-0.5 text-xs rounded-l ${
+                      leftViewMode === 'text'
+                        ? 'bg-primary text-primary-foreground'
+                        : 'text-muted-foreground hover:text-foreground'
+                    }`}
+                  >
+                    纯文本
+                  </button>
+                  <button
+                    type="button"
+                    role="tab"
+                    aria-selected={leftViewMode === 'html'}
+                    onClick={() => setLeftViewMode('html')}
+                    className={`px-2 py-0.5 text-xs rounded-r ${
+                      leftViewMode === 'html'
+                        ? 'bg-primary text-primary-foreground'
+                        : 'text-muted-foreground hover:text-foreground'
+                    }`}
+                  >
+                    原版视图
+                  </button>
+                </div>
                 {sensitiveMatches.length > 0 && (
                   <span className="text-xs text-muted-foreground ml-auto">
                     {sensitiveMatches.length} 处敏感词
@@ -821,25 +856,32 @@ export function UploadPage() {
                 onMouseUp={handleTextSelection as React.MouseEventHandler}
                 onScroll={handleOriginalScroll}
               >
-                <pre className="whitespace-pre-wrap text-sm font-medio leading-relaxed">
-                  {renderHighlightParts(previewText, sensitiveMatches, true, searchHits)}
-                </pre>
-                {addBtnPos && selectedText && (
-                  <button
-                    className="fixed z-50 bg-primary text-white text-xs px-2 py-1 rounded shadow-lg hover:bg-primary/90 flex items-center gap-1"
-                    style={{ left: addBtnPos.x + 8, top: addBtnPos.y - 30 }}
-                    onClick={() => {
-                      handleAddManualMatch();
-                      setAddBtnPos(null);
-                    }}
-                  >
-                    <Plus className="h-3 w-3" /> 添加
-                  </button>
-                )}
-                {originalTextFull.length > MAX_DESENSITIZE_CHARS && (
-                  <p className="text-xs text-muted-foreground mt-2 text-center">
-                    ... (还有 {originalTextFull.length - MAX_DESENSITIZE_CHARS} 字符未显示)
-                  </p>
+                {leftViewMode === 'html' && typeof parsedDocument.ast.content[0]?.content === 'string' ? (
+                  // 原版视图：表格 / 图片可见（不高亮）
+                  <HtmlPreview html={parsedDocument.ast.content[0].content} />
+                ) : (
+                  <>
+                    <pre className="whitespace-pre-wrap text-sm font-medio leading-relaxed">
+                      {renderHighlightParts(previewText, sensitiveMatches, true, searchHits)}
+                    </pre>
+                    {addBtnPos && selectedText && (
+                      <button
+                        className="fixed z-50 bg-primary text-white text-xs px-2 py-1 rounded shadow-lg hover:bg-primary/90 flex items-center gap-1"
+                        style={{ left: addBtnPos.x + 8, top: addBtnPos.y - 30 }}
+                        onClick={() => {
+                          handleAddManualMatch();
+                          setAddBtnPos(null);
+                        }}
+                      >
+                        <Plus className="h-3 w-3" /> 添加
+                      </button>
+                    )}
+                    {originalTextFull.length > MAX_DESENSITIZE_CHARS && (
+                      <p className="text-xs text-muted-foreground mt-2 text-center">
+                        ... (还有 {originalTextFull.length - MAX_DESENSITIZE_CHARS} 字符未显示)
+                      </p>
+                    )}
+                  </>
                 )}
               </div>
             </div>
