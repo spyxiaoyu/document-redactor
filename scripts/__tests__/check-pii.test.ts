@@ -25,11 +25,12 @@ function writeFixture(name: string, content: string): string {
   return p;
 }
 
-function runCheck(extraArgs: string[] = []): { code: number; stdout: string; stderr: string } {
+function runCheck(extraArgs: string[] = [], cwd?: string): { code: number; stdout: string; stderr: string } {
   try {
     const stdout = execFileSync('bash', [SCRIPT, ...extraArgs], {
       encoding: 'utf-8',
       stdio: ['ignore', 'pipe', 'pipe'],
+      cwd,
     });
     return { code: 0, stdout, stderr: '' };
   } catch (err: any) {
@@ -172,5 +173,82 @@ describe('check-pii.sh: 12 类通用 PII 正则拦截', () => {
     const f = writeFixture('clean2.ts', '// 干净代码\nexport const x = 2;\n');
     const r = runCheck([f]);
     expect(r.code).toBe(0);
+  });
+});
+
+describe('check-pii.sh: staged 模式只扫新增行（2026-07-26 diff-line 扫描）', () => {
+  // 触发来源：feat(rules) commit 被 hook 拦 113 处 —— 全是 PII 识别引擎源码
+  //   注释里的历史合成样例（引擎源码天然长得像 PII）。
+  // 修法契约：
+  //   - staged 模式（无参数）只扫 git diff --cached 的新增行（+ 行）
+  //     → 历史行的占位样例不再永远拦截 commit
+  //   - 显式文件模式保持全文件扫描（本文件前 16 个用例语义不变）
+  //   - __tests__ 目录豁免（probe 测试按 CONTRIBUTING 约定只放占位符，人工 review 兜底）
+  //
+  // 每个用例在独立临时 git repo 里跑（不污染项目仓库的 staging area）。
+  function makeRepo(): string {
+    const repo = fs.mkdtempSync(path.join(os.tmpdir(), 'check-pii-repo-'));
+    execFileSync('git', ['init', '-q'], { cwd: repo });
+    execFileSync('git', ['config', 'user.email', 'test@example.invalid'], { cwd: repo });
+    execFileSync('git', ['config', 'user.name', 'tester'], { cwd: repo });
+    return repo;
+  }
+  const repos: string[] = [];
+
+  afterAll(() => {
+    repos.forEach(r => fs.rmSync(r, { recursive: true, force: true }));
+  });
+
+  it('staged-1: 已 commit 的旧行含占位 PII，新增行干净 → exit 0（不翻旧账）', () => {
+    const repo = makeRepo();
+    repos.push(repo);
+    const f = path.join(repo, 'engine.ts');
+    // 第一次 commit：文件含 PII 形态占位（模拟引擎源码历史注释）
+    fs.writeFileSync(f, '// 历史注释：示例卡号 6222021234567890123\nexport const a = 1;\n');
+    execFileSync('git', ['add', 'engine.ts'], { cwd: repo });
+    execFileSync('git', ['commit', '-q', '-m', 'init', '--no-verify'], { cwd: repo });
+    // 第二次改动：只加一行干净代码，stage
+    fs.appendFileSync(f, 'export const b = 2;\n');
+    execFileSync('git', ['add', 'engine.ts'], { cwd: repo });
+    const r = runCheck([], repo);
+    expect(r.code, `旧行占位 PII 不应拦截：${r.stdout}${r.stderr}`).toBe(0);
+  });
+
+  it('staged-2: 新增行含占位 PII → exit 1（新增内容仍拦）', () => {
+    const repo = makeRepo();
+    repos.push(repo);
+    const f = path.join(repo, 'engine.ts');
+    fs.writeFileSync(f, 'export const a = 1;\n');
+    execFileSync('git', ['add', 'engine.ts'], { cwd: repo });
+    execFileSync('git', ['commit', '-q', '-m', 'init', '--no-verify'], { cwd: repo });
+    // 新增一行含 PII 形态
+    fs.appendFileSync(f, 'const card = "6222021234567890123";\n');
+    execFileSync('git', ['add', 'engine.ts'], { cwd: repo });
+    const r = runCheck([], repo);
+    expect(r.code, `新增行 PII 必须拦截`).not.toBe(0);
+    expect(r.stdout + r.stderr).toMatch(/6222021234567890123/);
+  });
+
+  it('staged-3: 新建文件含占位 PII → exit 1（新文件所有行都是新增行）', () => {
+    const repo = makeRepo();
+    repos.push(repo);
+    execFileSync('git', ['commit', '-q', '--allow-empty', '-m', 'init', '--no-verify'], { cwd: repo });
+    const f = path.join(repo, 'new.ts');
+    fs.writeFileSync(f, 'const phone = "13800001234";\n');
+    execFileSync('git', ['add', 'new.ts'], { cwd: repo });
+    const r = runCheck([], repo);
+    expect(r.code, `新文件 PII 必须拦截`).not.toBe(0);
+  });
+
+  it('staged-4: __tests__ 目录新增占位 PII → exit 0（probe 测试豁免）', () => {
+    const repo = makeRepo();
+    repos.push(repo);
+    execFileSync('git', ['commit', '-q', '--allow-empty', '-m', 'init', '--no-verify'], { cwd: repo });
+    const dir = path.join(repo, 'src', 'rules', '__tests__');
+    fs.mkdirSync(dir, { recursive: true });
+    fs.writeFileSync(path.join(dir, 'probe.test.ts'), 'const t = "联系人：张三";\n');
+    execFileSync('git', ['add', '.'], { cwd: repo });
+    const r = runCheck([], repo);
+    expect(r.code, `__tests__ 目录应豁免：${r.stdout}${r.stderr}`).toBe(0);
   });
 });

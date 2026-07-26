@@ -5,8 +5,15 @@
 # `npx vitest run scripts/__tests__/check-pii.test.ts` 验证 11 个契约用例全过。
 #
 # 用法：
-#   bash scripts/check-pii.sh <file> [<file> ...]   扫指定文件
-#   bash scripts/check-pii.sh                       扫 git staged 文件
+#   bash scripts/check-pii.sh <file> [<file> ...]   扫指定文件（全文件扫描）
+#   bash scripts/check-pii.sh                       扫 git staged 改动（只扫新增行）
+#
+# 模式语义（2026-07-26 diff-line 扫描改造）：
+#   - 显式文件模式：全文件逐行扫（人工审计用，语义不变）
+#   - staged 模式：只扫 git diff --cached 的新增行（+ 行）
+#     根因：PII 识别引擎源码（src/rules / src/engines）注释里的历史合成样例
+#     天然长得像 PII，全文件扫描导致任何 touch 这些文件的 commit 永远被拦。
+#     只扫新增行 → 历史行不再翻旧账，新增真 PII 仍然拦得住。
 #
 # 退出码：
 #   0 — 干净
@@ -68,8 +75,11 @@ fi
 # ——— 主流程 ———
 
 # 1. 决定要扫的文件列表
+#    STAGED_MODE=1 时（无参数）：只扫 git diff --cached 新增行
 TARGETS=()
+STAGED_MODE=0
 if [ "$#" -eq 0 ]; then
+  STAGED_MODE=1
   # 无参数：扫 git staged 新增/修改的文件
   if ! git rev-parse --git-dir >/dev/null 2>&1; then
     echo "❌ check-pii.sh: 不是 git 仓库，无法扫 staged files" >&2
@@ -85,6 +95,7 @@ fi
 
 if [ "$#" -gt 0 ]; then
   TARGETS=("$@")
+  STAGED_MODE=0
 fi
 
 if [ "${#TARGETS[@]}" -eq 0 ]; then
@@ -95,7 +106,10 @@ fi
 # - 目录级：node_modules / dist / coverage / .vite / test-fixtures (gitignore 已隐式排除)
 # - 目录级：scripts/ —— 工具代码自身 (check-pii.sh 含通用正则 PATTERN 字面)
 #   + 测试 fixture（占位符测试）。scripts/ 不被本工具自身扫描，避免自拦截。
-EXCLUDE_DIRS_REGEX='(^|/)(node_modules|dist|coverage|\.vite|test-fixtures|scripts)(/|$)'
+# - 目录级：__tests__/ —— probe 测试按 CONTRIBUTING 约定只放合成占位符
+#   （张三 / 示例公司 / 6222... 测试卡号），全文件都是"长得像 PII 的假数据"
+#   → 豁免，spy 人工 review 兜底（与 scripts/ 豁免同一 trade-off）
+EXCLUDE_DIRS_REGEX='(^|/)(node_modules|dist|coverage|\.vite|test-fixtures|scripts|__tests__)(/|$)'
 
 # 3. 命中跟踪
 PII_HITS=0
@@ -139,8 +153,19 @@ for file in "${TARGETS[@]}"; do
     continue
   fi
 
-  # 一次性 grep 所有 pattern
-  matches=$(grep -nE "$PII_REGEX" "$file" 2>/dev/null || true)
+  # 扫描：
+  #   - staged 模式：只扫 git diff --cached 的新增行（awk 解析 hunk header 跟踪新行号，
+  #     输出与 grep -n 相同的 "行号:内容" 格式，历史行不参与扫描）
+  #   - 显式文件模式：全文件 grep -n（人工审计语义不变）
+  if [ "$STAGED_MODE" = "1" ]; then
+    matches=$(git diff --cached -U0 -- "$file" 2>/dev/null | awk '
+      /^\+\+\+/ { next }
+      /^@@ /   { split($3, a, ","); sub(/^\+/, "", a[1]); ln = a[1] + 0; next }
+      /^\+/    { print ln ":" substr($0, 2); ln++ }
+    ' | grep -E "$PII_REGEX" || true)
+  else
+    matches=$(grep -nE "$PII_REGEX" "$file" 2>/dev/null || true)
+  fi
   if [ -n "$matches" ]; then
     while IFS= read -r line; do
       # 行格式：line_number:content
