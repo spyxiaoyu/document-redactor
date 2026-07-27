@@ -10,7 +10,7 @@ import { Shield, Download, Lock, RefreshCw, Plus, Search, Check, MousePointer2 }
 import type { SensitiveMatch, MappingEntry } from '@/types';
 import { CryptoManager } from '@/engines/CryptoManager';
 import { generateUUID, filterHitsByExistingMatches } from '@/utils';
-import { buildHighlightParts } from '@/utils/highlight';
+import { buildHighlightParts, splitByImagePositions } from '@/utils/highlight';
 // writeDocxFromEdits / JSZip 都改为动态引入，只在导出 docx 时才下载 ~91KB gzip
 
 const MAX_DESENSITIZE_CHARS = 500_000;
@@ -531,20 +531,35 @@ export function UploadPage() {
     setTimeout(() => setToast(null), 2000);
   }, [selectedText, addManualMatch]);
 
-  // 渲染高亮 parts 为 JSX（基于 utils/highlight.ts 的 buildHighlightParts 纯函数）
+  // 渲染高亮 parts 为 JSX（基于 utils/highlight.ts 的 buildHighlightParts + splitByImagePositions 纯函数）
   // - 原文面板：叠加 searchHits，每个 hit 渲染为 <mark id="search-hit-{i}>，可被 scrollIntoView 定位
   // - 脱敏后面板：不渲染 hit（搜索位置只用于预览，不影响脱敏后视觉）
+  // - 原文 + 脱敏后两边：在 imagePositions 处插入 inline chip（提示用户"此处原有图片"）
+  //
+  // 关键设计（spy 截图 2026-07-27 反馈）：
+  //   segment-based：先按 imagePositions 切文本为 segments，每个 segment 单独 buildHighlightParts，
+  //   chip 渲染在 segment 之间的【缝隙】。chip 位置精度 = imagePosition 本身，
+  //   不会被 part/match 边界错位。
   const renderHighlightParts = useCallback(
-    (text: string, matches: SensitiveMatch[], isOriginal: boolean, searchHitsArg?: SearchHit[]) => {
+    (text: string, matches: SensitiveMatch[], isOriginal: boolean, searchHitsArg?: SearchHit[], imagePositionsArg?: number[]) => {
       if (!text) return [];
-      const parts = buildHighlightParts(text, matches, localSelected, isOriginal);
 
       // 把 searchHits 限定在当前 text 范围内（截断预览场景下越界 hit 不渲染）
       const visibleHits = isOriginal && searchHitsArg && searchHitsArg.length > 0
         ? searchHitsArg.filter(h => h.start < text.length && h.end <= text.length)
         : [];
 
-      const renderMatchPart = (part: typeof parts[number] & { kind: 'match' }, idx: number) => {
+      // 1. 切 segments（含 chip 缝隙标注）
+      //    splitByImagePositions 返回 segments，按 imagePositions 切，chip 插在缝隙
+      const segments = splitByImagePositions(text, matches, imagePositionsArg);
+
+      // 内嵌辅助函数：渲染 match span
+      const renderMatchSpan = (
+        part: ReturnType<typeof buildHighlightParts>[number] & { kind: 'match' },
+        idx: number,
+        segOffset: number,
+        children?: ReactElement[],
+      ): ReactElement => {
         const onClick = () => toggleMatchSelection(part.matchId);
         const className = isOriginal
           ? "px-0.5 py-0.5 rounded cursor-pointer bg-yellow-200 dark:bg-yellow-800 dark:text-yellow-200 hover:bg-yellow-300 dark:hover:bg-yellow-700 ring-2 ring-primary"
@@ -554,112 +569,122 @@ export function UploadPage() {
           : `已脱敏: ${part.type}`;
         return (
           <span
-            key={`match-${part.matchId}-${idx}`}
+            key={`match-${segOffset}-${part.matchId}-${idx}`}
             className={className}
             title={title}
             onClick={onClick}
           >
-            {part.text}
+            {children ?? part.text}
           </span>
         );
       };
 
-      // 走纯文本 + 命中搜索词的快速路径：没有 hit 时直接按 buildHighlightParts 渲染
-      if (visibleHits.length === 0) {
-        return parts.map((part, idx) => {
-          if (part.kind === 'text') {
-            return <span key={`text-${idx}`}>{part.text}</span>;
+      // 2. 渲染单个 segment 的高亮 parts（不含 chip）
+      const renderSegmentParts = (segText: string, segMatches: SensitiveMatch[], segOffset: number): ReactElement[] => {
+        const parts = buildHighlightParts(segText, segMatches, localSelected, isOriginal);
+        // 快速路径：无 hit 时直接渲染
+        if (visibleHits.length === 0) {
+          return parts.map((part, idx) => {
+            if (part.kind === 'text') {
+              return <span key={`text-${segOffset}-${idx}`}>{part.text}</span>;
+            }
+            return renderMatchSpan(part, idx, segOffset);
+          });
+        }
+        // 有 hit：按累积 offset 切片插入 mark
+        const result: ReactElement[] = [];
+        let offsetInSeg = 0;
+        parts.forEach((part, partIdx) => {
+          const partStartInSeg = offsetInSeg;
+          const partEndInSeg = partStartInSeg + part.text.length;
+          offsetInSeg = partEndInSeg;
+          const partStartInText = segOffset + partStartInSeg;
+          const partEndInText = segOffset + partEndInSeg;
+
+          const hitsInThisPart = visibleHits
+            .filter(h => h.start < partEndInText && h.end > partStartInText)
+            .sort((a, b) => a.start - b.start);
+
+          if (hitsInThisPart.length === 0) {
+            if (part.kind === 'text') {
+              result.push(<span key={`text-${segOffset}-${partIdx}`}>{part.text}</span>);
+            } else {
+              result.push(renderMatchSpan(part, partIdx, segOffset));
+            }
+            return;
           }
-          return renderMatchPart(part, idx);
-        });
-      }
 
-      // 有 hit 时：把每个 part 再按 hit 边界切碎（text part 和 match part 都要切）。
-      // 安全前提：buildHighlightParts 输出的 text part 都是连续的、按顺序覆盖 text 的区间，
-      // 因此可以用累积偏移把每个 part 的字符位置映射回 text 的整体坐标。
-      //
-      // match part 也要切的原因：搜索 hit 可能完全 / 部分落在 auto-detected match 内部，
-      // 之前只切 text part → match 内的 hit 既不渲染 mark，scrollIntoView 也找不到 target。
-      // 修法：match part 内部也按 hit 切碎，hit 段渲染 <mark id="search-hit-i">，jump 可用。
-      const result: ReactElement[] = [];
-      let offsetInText = 0;
-      parts.forEach((part, partIdx) => {
-        const partStart = offsetInText;
-        const partEnd = partStart + part.text.length;
-        offsetInText = partEnd;
+          let cursor = 0;
+          const slices: ReactElement[] = [];
+          hitsInThisPart.forEach((hit, hitIdx) => {
+            const relStart = Math.max(0, hit.start - partStartInText);
+            const relEnd = Math.min(hit.end - partStartInText, part.text.length);
+            if (relStart > cursor) {
+              slices.push(<span key={`pre-${segOffset}-${partIdx}-${hitIdx}`}>{part.text.slice(cursor, relStart)}</span>);
+            }
+            slices.push(
+              <mark
+                key={`hit-${hit.index}-seg${segOffset}-p${partIdx}-h${hitIdx}`}
+                data-search-hit={hit.index}
+                id={`search-hit-${hit.index}-seg${segOffset}-p${partIdx}-h${hitIdx}`}
+                className="bg-blue-200 dark:bg-blue-800 dark:text-blue-100 rounded px-0.5 cursor-pointer underline decoration-2"
+                title={`第 ${hit.index + 1} 处命中「${hit.value}」`}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  handleJumpToSearchHit(hit.index);
+                }}
+              >
+                {part.text.slice(Math.max(cursor, relStart), relEnd)}
+              </mark>
+            );
+            cursor = relEnd;
+          });
+          if (cursor < part.text.length) {
+            slices.push(<span key={`post-${segOffset}-${partIdx}`}>{part.text.slice(cursor)}</span>);
+          }
 
-        const hitsInThisPart = visibleHits
-          // 用 overlap 判定，不要用 h.start 落在 part 内 —— 否则跨 part 的 hit
-          // (前半在 A part、后半在 B part) 在 B part 不会渲染。
-          .filter(h => h.start < partEnd && h.end > partStart)
-          .sort((a, b) => a.start - b.start);
-
-        if (hitsInThisPart.length === 0) {
           if (part.kind === 'text') {
-            result.push(<span key={`text-${partIdx}`}>{part.text}</span>);
+            result.push(...slices);
           } else {
-            result.push(renderMatchPart(part, partIdx));
+            result.push(renderMatchSpan(part, partIdx, segOffset, slices));
           }
-          return;
-        }
-
-        // 有 hit：按 hit 边界切碎。match part 时把整段包在 match span 里，hit 用嵌套 mark。
-        let cursor = 0;
-        const slices: ReactElement[] = [];
-        hitsInThisPart.forEach((hit, hitIdx) => {
-          const relStart = hit.start - partStart;
-          const relEnd = Math.min(hit.end - partStart, part.text.length);
-          if (relStart > cursor) {
-            slices.push(<span key={`pre-${partIdx}-${hitIdx}`}>{part.text.slice(cursor, relStart)}</span>);
-          }
-          // 跨 part 的 hit 会被切到多个 mark，用 {hit.index}-s{partIdx}-{hitIdx} 避免 id 重复
-          // handleJumpToSearchHit 用 querySelectorAll + first 来定位到 hit 起点
-          slices.push(
-            <mark
-              key={`hit-${hit.index}-${partIdx}-${hitIdx}`}
-              data-search-hit={hit.index}
-              id={`search-hit-${hit.index}-s${partIdx}-${hitIdx}`}
-              className="bg-blue-200 dark:bg-blue-800 dark:text-blue-100 rounded px-0.5 cursor-pointer underline decoration-2"
-              title={`第 ${hit.index + 1} 处命中「${hit.value}」`}
-              // mark 嵌套在 match span 里时，mark 的 onClick 触发后会冒泡到 match 的 onClick
-              // → match 会被错误地取消选中。stopPropagation 阻断冒泡
-              onClick={(e) => {
-                e.stopPropagation();
-                handleJumpToSearchHit(hit.index);
-              }}
-            >
-              {part.text.slice(Math.max(cursor, relStart), relEnd)}
-            </mark>
-          );
-          cursor = relEnd;
         });
-        if (cursor < part.text.length) {
-          slices.push(<span key={`post-${partIdx}`}>{part.text.slice(cursor)}</span>);
-        }
+        return result;
+      };
 
-        if (part.kind === 'text') {
-          result.push(...slices);
-        } else {
-          // match part：把整段包在 match span 里，hit 用嵌套 mark
-          const onClick = () => toggleMatchSelection(part.matchId);
-          const className = isOriginal
-            ? "px-0.5 py-0.5 rounded cursor-pointer bg-yellow-200 dark:bg-yellow-800 dark:text-yellow-200 hover:bg-yellow-300 dark:hover:bg-yellow-700 ring-2 ring-primary"
-            : "border-b border-black text-transparent cursor-pointer inline-block min-w-[1ch]";
-          const title = isOriginal
-            ? `${part.type} - ${Math.round(part.confidence * 100)}%`
-            : `已脱敏: ${part.type}`;
-          result.push(
-            <span
-              key={`match-${part.matchId}-${partIdx}`}
-              className={className}
-              title={title}
-              onClick={onClick}
-            >
-              {slices}
-            </span>
-          );
+      // 3. 渲染 chip（缝隙之间）
+      const renderImageChip = (key: string) => (
+        <div
+          key={key}
+          className="my-2 py-2 px-2 bg-muted/30 border-y border-border"
+          data-testid="image-chip"
+        >
+          <p className="text-[11px] text-muted-foreground italic leading-snug">
+            ⚠ 此处原有图片，暂无法显示，脱敏下载后可查看。
+          </p>
+        </div>
+      );
+
+      // 4. 顺序拼接：segment[0] 内容 + chip（如有） + segment[1] 内容 + chip + ...
+      const validPositions = (imagePositionsArg || [])
+        .filter(p => Number.isFinite(p) && p > 0 && p <= text.length)
+        .map(p => Math.floor(p));
+      const uniqueSortedPositions: number[] = [];
+      for (const p of validPositions.sort((a, b) => a - b)) {
+        if (uniqueSortedPositions.length === 0 || uniqueSortedPositions[uniqueSortedPositions.length - 1] !== p) {
+          uniqueSortedPositions.push(p);
         }
-        offsetInText += part.text.length;
+      }
+      const chipCount = segments.length - 1;
+
+      const result: ReactElement[] = [];
+      segments.forEach((seg, segIdx) => {
+        const segText = text.slice(seg.start, seg.end);
+        result.push(...renderSegmentParts(segText, seg.matches, seg.start));
+        if (segIdx < chipCount) {
+          const chipPos = uniqueSortedPositions[segIdx];
+          result.push(renderImageChip(`img-chip-${isOriginal ? 'orig' : 'mask'}-${chipPos}-${segIdx}`));
+        }
       });
       return result;
     },
@@ -862,7 +887,7 @@ export function UploadPage() {
                 ) : (
                   <>
                     <pre className="whitespace-pre-wrap text-sm font-medio leading-relaxed">
-                      {renderHighlightParts(previewText, sensitiveMatches, true, searchHits)}
+                      {renderHighlightParts(previewText, sensitiveMatches, true, searchHits, parsedDocument.ast.metadata?.imagePositions)}
                     </pre>
                     {addBtnPos && selectedText && (
                       <button
@@ -904,7 +929,7 @@ export function UploadPage() {
               >
                 {originalTextFull ? (
                   <pre className="whitespace-pre-wrap text-sm leading-relaxed">
-                    {renderHighlightParts(previewText, sensitiveMatches, false)}
+                    {renderHighlightParts(previewText, sensitiveMatches, false, undefined, parsedDocument.ast.metadata?.imagePositions)}
                   </pre>
                 ) : (
                   <div className="flex flex-col items-center justify-center h-[200px] text-muted-foreground">

@@ -8,7 +8,7 @@
  * 修法：unselected match 当作 text 推进 lastEnd，selected match 按 kind: 'match' 推进 lastEnd。
  */
 import { describe, it, expect } from 'vitest';
-import { buildHighlightParts } from '../highlight';
+import { buildHighlightParts, splitByImagePositions } from '../highlight';
 import type { SensitiveMatch } from '@/types';
 
 function mkMatch(id: string, type: SensitiveType, value: string, start: number): SensitiveMatch {
@@ -149,5 +149,138 @@ describe('buildHighlightParts: 取消高亮不能丢字段', () => {
     const parts = buildHighlightParts(text, [], new Set(), true);
     expect(parts.length).toBe(1);
     expect(parts[0]).toEqual({ kind: 'text', text });
+  });
+});
+
+/**
+ * splitByImagePositions：spy 截图 2026-07-27 反馈修法
+ *
+ * 关键不变量：
+ *   - chip 位置精度 = imagePosition 本身（不会漂移到 segment 起点）
+ *   - segments 拼回去 === 原文（无重复无丢失）
+ *   - 落在 segment 边界内的 match 归属正确
+ *   - imagePositions 越界 / 重复 / 无效 输入做防御性清洗
+ */
+describe('splitByImagePositions（2026-07-27 spy 央视合同 3.11 反馈）', () => {
+  it('spy 截图 bug 重现：旧实现把 chip 放在 part 起点，新实现应放在 imagePosition 处', () => {
+    // 模拟央视合同真实情形：
+    //   text 中有一段长 text-only stretch 包含 imagePosition
+    //   旧实现 part-based flush：chip 落在 part 起点（错位）
+    //   新实现 segment-based：chip 落在 imagePosition（精确）
+    //
+    // 关键场景：imagePosition 落在 text part 中间，前面有 match
+    const text = '前置内容：[MATCH-A-START]敏感词1[/MATCH-A-END]中间长文本[X]后半部分';
+    const matches: SensitiveMatch[] = [
+      mkMatch('m1', 'COMPANY', '敏感词1', 7),
+    ];
+    // imagePosition = 17（"中间长文本"内部，远离 part 边界）
+    const segments = splitByImagePositions(text, matches, [17]);
+
+    // 应切成 2 段：[0, 17] + [17, text.length]
+    expect(segments.length).toBe(2);
+    expect(segments[0]).toEqual({
+      start: 0,
+      end: 17,
+      matches: [expect.objectContaining({ id: 'm1', start: 7, end: 11 })],
+    });
+    expect(segments[1].start).toBe(17);
+    expect(segments[1].end).toBe(text.length);
+    expect(segments[1].matches.length).toBe(0);
+
+    // chip 渲染缝隙：segment[0] 文本 + chip + segment[1] 文本
+    // 验证拼回去 === 原 text
+    const reconstructed = segments.map(s => text.slice(s.start, s.end)).join('');
+    expect(reconstructed).toBe(text);
+  });
+
+  it('无 imagePosition 时返回单 segment（覆盖全文）', () => {
+    const text = 'ABCDEFG';
+    const matches = [mkMatch('m1', 'COMPANY', 'CD', 2)];
+    const segments = splitByImagePositions(text, matches, undefined);
+    expect(segments.length).toBe(1);
+    expect(segments[0]).toEqual({
+      start: 0,
+      end: 7,
+      matches: [expect.objectContaining({ id: 'm1' })],
+    });
+  });
+
+  it('多个 imagePosition 升序切多段', () => {
+    // text = 'AAAA\n\nBBBB\n\nCCCC\n\nDDDD' (length=22)
+    //   AAAA   = 0-3
+    //   \n\n   = 4-5
+    //   BBBB   = 6-9
+    //   \n\n   = 10-11
+    //   CCCC   = 12-15
+    //   \n\n   = 16-17
+    //   DDDD   = 18-21
+    // 模拟两个图片位置：10 (BBBB 后换行起点) + 16 (CCCC 后换行起点)
+    //   切割后 [0,10] = "AAAA\n\nBBBB"
+    //           [10,16] = "\n\nCCCC"
+    //           [16,22] = "\n\nDDDD"
+    const text = 'AAAA\n\nBBBB\n\nCCCC\n\nDDDD';
+    const segments = splitByImagePositions(text, [], [10, 16]);
+    expect(segments.length).toBe(3);
+    expect(segments.map(s => [s.start, s.end])).toEqual([
+      [0, 10],
+      [10, 16],
+      [16, text.length],
+    ]);
+    expect(segments.map(s => text.slice(s.start, s.end))).toEqual([
+      'AAAA\n\nBBBB',
+      '\n\nCCCC',
+      '\n\nDDDD',
+    ]);
+  });
+
+  it('重复 imagePosition 去重', () => {
+    const text = 'AABBCC';
+    const segments = splitByImagePositions(text, [], [2, 2, 4, 4]);
+    expect(segments.length).toBe(3);
+    expect(segments.map(s => [s.start, s.end])).toEqual([[0, 2], [2, 4], [4, 6]]);
+  });
+
+  it('越界 imagePosition（> text.length 或 < 0）被过滤', () => {
+    const text = 'ABCDE';
+    // 输入 [-1, 0, 3, 5, 10]，过滤后剩 [0, 3, 5]
+    // 切点：0 / 3 / 5。segment [0,3] + [3,5]
+    expect(splitByImagePositions(text, [], [-1]).length).toBe(1);  // 单段
+    const segs = splitByImagePositions(text, [], [-1, 0, 3, 5, 10]);
+    // 0 和 5 是边界 → 实际切点 = {3}（0 = start, 5 = end）
+    expect(segs.length).toBe(2);
+    expect(segs.map(s => [s.start, s.end])).toEqual([[0, 3], [3, 5]]);
+  });
+
+  it('imagePosition 在 match 内部：match 落在 start 所在 segment', () => {
+    const text = 'AAA[敏感词1]BBB[X]CCC';
+    const matches = [mkMatch('m1', 'COMPANY', '敏感词1', 3)];
+    const segments = splitByImagePositions(text, matches, [7]);
+    // [0, 7] segment 包含 match（match.start=3 in [0,7)）
+    // [7, 16] segment 不包含
+    expect(segments[0].matches.length).toBe(1);
+    expect(segments[1].matches.length).toBe(0);
+  });
+
+  it('跨 segment 的 match（start 在 A、end 在 B）：归属 start 所在 segment', () => {
+    // match.start=2, end=8 → 切点在 5
+    // segment [0,5]: 包含 match.start=2 → 归属
+    // segment [5,10]: match.start=5 不在 [5,10) 内 → 不归属（避免重复）
+    const text = 'AB敏感词1CDXYZW';
+    const matches = [mkMatch('m1', 'COMPANY', '感词1CDXY', 2)];  // start=2, end=10
+    const segments = splitByImagePositions(text, matches, [5]);
+    expect(segments[0].matches.length).toBe(1);
+    expect(segments[1].matches.length).toBe(0);
+  });
+
+  it('空文本返回空数组', () => {
+    expect(splitByImagePositions('', [], [0, 5])).toEqual([]);
+  });
+
+  it('imagePosition 非数字（含 NaN/Infinity）被过滤', () => {
+    const text = 'ABCDE';
+    const segments = splitByImagePositions(text, [], [NaN, Infinity, -Infinity, 2]);
+    // NaN/Infinity 被 Number.isFinite 过滤 → 只剩 2
+    expect(segments.length).toBe(2);
+    expect(segments.map(s => [s.start, s.end])).toEqual([[0, 2], [2, 5]]);
   });
 });

@@ -204,6 +204,16 @@ export class SensitiveFinder {
           }
         }
 
+        // PROJECT_NAME 叙述短语 FP（spy 央视合同 2026-07-27 FP-B）：
+        //   PROJECT_NAME regex `项目(?:名|称|书)\s*[:：]?\s*(...)` 在 "项目名称仅供参考" 处
+        //   匹配 "项目名" 后捕获 "称仅供参考"（"名称"被拆，"称"落入捕获组），value = "称仅供参考"
+        //   这是叙述说明（"项目名称仅供参考，具体以实际播出为准"），非真项目名
+        //   修法：value 命中叙述性关键词（仅供参考/以实际/另行/详见/待定/协商等）→ 拒
+        //   回归安全：真项目名（"星辰计划"/"央视春晚"）不含这些叙述词 → 不误伤
+        if (rule.type === 'PROJECT_NAME') {
+          if (/^(?:名|称)?(?:仅供参考|仅供|以实际|以实|另行|另议|详见|参见|见附件|见下|待定|暂定|待确定|双方协商|由.{0,6}确定|如实际)/.test(value)) continue;
+        }
+
         // AMOUNT_UPPER 中段孤立 】 FP 过滤（spy 第五批 audit — 弱电改造 [907-916]/[977-986]/[1054-1064]/[1103-1112] 4 处 FP）：
         //   原文是 docx 表格残余括号（如 "管理费人民币伍万壹仟玖佰】元整" 中段独立出现 `】`）
         //   真 bracket-wrapped amount 必有 `【...】` 配对（A1 case "【壹拾伍万陆仟肆佰肆拾】元整"）
@@ -397,6 +407,57 @@ if (!formMatch) continue;
           //   - 注意：保留单字 "时/同/也/又" 在合法公司名里的可能性
           if (/^(?:同时|但还|但是|但又|但仍|但须|但必|但需|但得|也同|也得|也须|也必|也需|也仍|也是|仍旧|仍然|仍须|仍必|仍需|仍得|还是|仍是|即便|即是|或是|同样|又同|又还|又须|又得|还需|还能)/.test(safeBody)) continue;
 
+          // "提供" coverb 叙述前缀 SPLIT（spy 央视合同 2026-07-27 FP-E）：
+          //   "5 个工作日之内向甲方提供 SAMPLE-CO-X" — "提供" 前是叙述短语（向甲方），
+          //   "提供" 后 X 是真公司名。原 mid-verb SPLIT 只查 委托/代理/代表/以，
+          //   "提供" 在 ACTION_VERB_TRIGGERS (f863d0b v3) 列表里 → line 419 会直接拒整段 → 4 段 CTR 全漏识别
+          //   修法：在 line 419 之前加 "提供" SPLIT 块（mirror "以" SPLIT 结构），独立 emit 右段 + form
+          //   guard：'提供' 不在 body 首（tigongIdx >= 2）→ 不误伤"提供链管理"等以"提供"开头的真字号
+          //         非月份路径：右段 ≥3 han + 无 reject chars → 合法公司名主体（保持原宽松）
+          //         月份 skip 路径（"上月/本月/当月/次月/下月/同月"）：严一档 — ≥4 han + 起始非叙述名词
+          //           例："次月20日前向甲方提供上月央视市场研究" → skip "上月" → "央视市场研究" 6 han ≥4 ✅ → emit
+          //           例："次月20日前向甲方提供本月服务方案" → skip "本月" → "服务方案" 4 han ≥4 ✅ + 起始"服"叙述名词 → 拒
+          //   trade-off：'提供' 在 body 首的真公司名仍被 ACTION_VERB_TRIGGERS 拒（既有 v3 行为，不引入 regression）
+          {
+            const tigongIdx = safeBody.indexOf('提供');
+            if (tigongIdx >= 2) {
+              let rightBody = safeBody.slice(tigongIdx + 2);
+              // 月份 skip（v3 spy L1 压力要求"一起全修"）：
+              //   "提供上月X公司" → skip 月份 → "X公司" emit（之前 v2 拒整段是 trade-off，spy 不接受）
+              const timeMatch = rightBody.match(/^(?:上月|本月|当月|次月|下月|同月)/);
+              const timePrefixLen = timeMatch ? timeMatch[0].length : 0;
+              if (timePrefixLen > 0) {
+                rightBody = rightBody.slice(timePrefixLen);
+              }
+              // 叙述名词 blacklist：skip 月份后若起始是"服务/方案/数据/报告"等叙述名词 → 仍拒
+              //   "提供本月服务方案" → skip "本月" → "服务方案" → 起始"服" → 叙述名词 → 拒
+              //   "提供上月央视市场研究" → skip "上月" → "央视市场研究" → 起始"央" → 真公司常用首字 → 切
+              const NARRATIVE_NOUN_START = /^(?:服务|方案|计划|数据|报告|材料|资料|工作|管理|内容|形式|流程|标准|要求|需求|措施|期限|时间|情况|事项)/;
+              const isNarrativeNoun = NARRATIVE_NOUN_START.test(rightBody);
+              // 阈值：非月份 ≥3 han（与"以"SPLIT 一致）；月份 skip 路径 ≥4 han（防"服务方案"误切）
+              const hanThreshold = timePrefixLen > 0 ? 4 : 3;
+              const rightHan = rightBody.match(/[\u4e00-\u9fa5]/g) || [];
+              if (!isNarrativeNoun && rightHan.length >= hanThreshold && !/[与和及其了在出于而之则这那每该各自己诸何属]/.test(rightBody)) {
+                const rightValue = rightBody + form;
+                const rs = start + safeStart + tigongIdx + 2 + timePrefixLen;
+                const re = rs + rightValue.length;
+                if (text.slice(rs, re) === rightValue) {
+                  matches.push({
+                    id: generateUUID(),
+                    type: rule.type,
+                    value: rightValue,
+                    start: rs,
+                    end: re,
+                    confidence: rule.weight,
+                    context: extractContext(text, rs, 30),
+                    blockId: undefined
+                  });
+                  continue;
+                }
+              }
+            }
+          }
+
           // 五次检查：safeBody 含合同动作动词 → 拒（样例品牌 Pre-A 增资协议 audit 22 FPs 修复）
           //   - 真公司 body 是静态名词（地点 + 品牌 + 行业词"科技/投资/实业" + 公司形态"发展/控股/管理"）
           //   - FP body 含动态动作词（"应向"/"已经"/"办理"/"经营"/"承诺"/"损害"/"制订" 等合同动作动词）
@@ -465,7 +526,45 @@ if (!formMatch) continue;
           //   - regex lookbehind (?<!代理) 帮不上：这里 "代理" 在 body 内部（match 中段），不在 match 左边界
           //   - mid-verb SPLIT 帮不上：body 7 chars < 18 阈值
           //   - 真公司名不以 "的代理/的委托/的代表" 结尾（"智能代理" 不带 "的" → 不误伤 case 1b-3）
-          if (/的(?:委托)?(?:代理|委托|代表)$/.test(safeBody)) continue;
+          //   2026-07-27 spy 央视合同反馈 FP-C："乙方作为代理公司" body "乙方作为代理" 以 "作为代理" 结尾
+          //     原 pattern 只覆盖 "的X"，漏 "作为X"（"作代理" / "作为代理" 简写）
+          //     修法：连接词扩展为 (?:的|作为?)（的代理 / 作代理 / 作为代理 全覆盖）
+          //     回归安全："智能代理" body 前字是 "能"，非 的/作 → 不误伤 case 1b-3
+          if (/(?:的|作为?)(?:委托|代理|代表)$/.test(safeBody)) continue;
+
+          // "以" coverb 叙述前缀 SPLIT（spy 央视合同 2026-07-27 FP-D）：
+          //   "广告发布后以 SAMPLE-CO-X" — "以" 前是叙述短语（广告发布后），
+          //   "以" 后 X 是真公司名。原 mid-verb SPLIT 只查 委托/代理/代表，漏 "以"，
+          //   且短 body（12 char）被下方 18 阈值挡住 → 整段贪婪被误识别为 COMPANY
+          //   修法：body 内 "以" 位于 index≥2 时，把 "以" 后段 + form 独立 emit，丢弃叙述前缀
+          //   guard：'以' 不在 body 首（index≥2）→ 不误伤 "SAMPLE-CO-Y" 等以"以"开头的真字号
+          //         （"SAMPLE-CO-Y"是占位符，演示 guard 不误伤以"以"开头的真字号）
+          //         右段 ≥3 han + 无 reject chars → 保证是合法公司名主体
+          {
+            const yiIdx = safeBody.indexOf('以');
+            if (yiIdx >= 2) {
+              const rightBody = safeBody.slice(yiIdx + 1);
+              const rightHan = rightBody.match(/[\u4e00-\u9fa5]/g) || [];
+              if (rightHan.length >= 3 && !/[与和及其了在出于而之则这那每该各自己诸何属]/.test(rightBody)) {
+                const rightValue = rightBody + form;
+                const rs = start + safeStart + yiIdx + 1;
+                const re = rs + rightValue.length;
+                if (text.slice(rs, re) === rightValue) {
+                  matches.push({
+                    id: generateUUID(),
+                    type: rule.type,
+                    value: rightValue,
+                    start: rs,
+                    end: re,
+                    confidence: rule.weight,
+                    context: extractContext(text, rs, 30),
+                    blockId: undefined
+                  });
+                  continue;
+                }
+              }
+            }
+          }
 
           // 三次检查：mid-verb 防御（zcool docx [116-144] FP 修复）
           //   - "X公司委托Y公司" / "X公司代理Y公司" / "X公司代表Y公司"

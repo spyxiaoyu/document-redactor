@@ -9,6 +9,14 @@ export interface DocumentMetadata {
   modified?: Date;
   pages?: number;
   sheets?: number;
+  /** 内嵌图片数（mammoth 抽出来的 <img> 数量，docx 可信） */
+  imageCount?: number;
+  /**
+   * 图片在 rawText 中的 offset 位置（升序）。
+   * 检测策略：rawText 里 3+ 连续换行 = 原本有图片段（mammoth 把图片 cell 抽成空段）。
+   * 每个位置是空行序列的【起点】。
+   */
+  imagePositions?: number[];
 }
 
 export interface Position {

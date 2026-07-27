@@ -245,7 +245,9 @@ export const BUILTIN_RULES: BuiltinRuleDefinition[] = [
     //   FP 控制（post-filter 在 SensitiveFinder.ts）：
     //     - 域名部分必须 ≥ 4 chars（防 "x.cn" 这种 3 字过短）
     //     - 必须含 . （已 regex 保证）
-    pattern: /(?:https?:\/\/[\w-]+(?:\.[\w-]+)+(?:\/[^\s<>"']*)?|www\.[\w-]+(?:\.[\w-]+)+(?:\/[^\s<>"']*)?|(?<![\w@.])(?:[\w-]+\.)+(?:com|cn|org|net|io|gov|edu|co|ai|app|me|info|xyz|biz|com\.cn|org\.cn|net\.cn|gov\.cn|edu\.cn)(?:\/[^\s<>"']*)?)/gi,
+    //   2026-07-27 spy 央视合同反馈 FP-A：URL 后紧跟中文右括号）时贪吞后续中文
+    //     修法：path/query 排除集加中文标点（）】」』，。；、和全角空格），URL 停在中文标点前
+    pattern: /(?:https?:\/\/[\w-]+(?:\.[\w-]+)+(?:\/[^\s<>"'）】」』，。；、\u3000]*)?|www\.[\w-]+(?:\.[\w-]+)+(?:\/[^\s<>"'）】」』，。；、\u3000]*)?|(?<![\w@.])(?:[\w-]+\.)+(?:com|cn|org|net|io|gov|edu|co|ai|app|me|info|xyz|biz|com\.cn|org\.cn|net\.cn|gov\.cn|edu\.cn)(?:\/[^\s<>"'）】」』，。；、\u3000]*)?)/gi,
     weight: 0.85,
     description: '网址(URL/域名)'
   }
