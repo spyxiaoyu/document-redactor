@@ -283,4 +283,68 @@ describe('splitByImagePositions（2026-07-27 spy 央视合同 3.11 反馈）', (
     expect(segments.length).toBe(2);
     expect(segments.map(s => [s.start, s.end])).toEqual([[0, 2], [2, 5]]);
   });
+
+  // ============================================================
+  // spy 截图 2026-07-27 反馈修法 — 图片之后的 match 必须 emit
+  //   根因：旧实现 segMatches.start 是 text-absolute offset，
+  //         传给 buildHighlightParts(segText, segMatches) 时 match.start 远大于 segText.length
+  //         → match 被吞掉不渲染 → spy 截图"图片之后没高亮"
+  //   修法：segMatches.start/end 平移为 segment-relative offset
+  // ============================================================
+  it('spy 截图修法：imagePosition 之后的 match 必须 emit（segment-relative 平移）', () => {
+    // text = '前置内容：[敏感词1]图片位置[Chip][敏感词2]后半部分'
+    // imagePosition = 9 ("图片位置" 起点)
+    // segment[0] = [0, 9] = "前置内容：[敏感词1]"  (含 m1)
+    // segment[1] = [9, text.length] = "图片位置[Chip][敏感词2]后半部分"  (含 m2)
+    //
+    // 关键断言：m2 在 segment[1] 内，start/end 必须是 segment-relative（0-based）
+    //   旧实现返回 start=absolute（远大于 segText.length）→ match 被吞
+    //   新实现返回 start=segment-relative（<= segText.length）→ match 正常 emit
+    const text = '前置内容：[敏感词1]图片位置[敏感词2]后半部分';
+    const m1Start = text.indexOf('[敏感词1]');
+    const m1End = m1Start + '[敏感词1]'.length;
+    const imgPos = text.indexOf('图片位置');
+    const m2Start = text.indexOf('[敏感词2]');
+    const m2End = m2Start + '[敏感词2]'.length;
+    const m1 = mkMatch('m1', 'COMPANY', '[敏感词1]', m1Start);
+    m1.end = m1End;
+    const m2 = mkMatch('m2', 'COMPANY', '[敏感词2]', m2Start);
+    m2.end = m2End;
+    const segments = splitByImagePositions(text, [m1, m2], [imgPos]);
+
+    expect(segments.length).toBe(2);
+    // segment[0] 含 m1 (absolute == relative when segStart=0)
+    expect(segments[0].matches.length).toBe(1);
+    expect(segments[0].matches[0].id).toBe('m1');
+    // 关键：segment[1] 含 m2，且 start 是 segment-relative（0-based）
+    expect(segments[1].matches.length).toBe(1);
+    expect(segments[1].matches[0].id).toBe('m2');
+    // m2.start = imgPos + 4 (跳过 "图片位置"), segStart = imgPos
+    // relative start = 4, relative end = 4 + '[敏感词2]'.length
+    expect(segments[1].matches[0].start).toBe('图片位置'.length);
+    expect(segments[1].matches[0].end).toBe('图片位置'.length + '[敏感词2]'.length);
+
+    // 终极验证：buildHighlightParts 用 segment-relative match 在 segText 上工作
+    const seg1Text = text.slice(segments[1].start, segments[1].end);
+    const parts = buildHighlightParts(seg1Text, segments[1].matches, new Set(['m2']), true);
+    const reconstructed = parts.map(p => p.text).join('');
+    expect(reconstructed).toBe(seg1Text);
+    // m2 必须 emit 为 match kind（不是被吞）
+    const matchParts = parts.filter(p => p.kind === 'match');
+    expect(matchParts.length).toBe(1);
+    expect(matchParts[0].text).toBe('[敏感词2]');
+  });
+
+  it('跨边界 match：end 被截断到 segment 边界内（避免 segText 越界）', () => {
+    // match.start 在 segment[0] 内、end 在 segment[1] 内 → 归属 segment[0]，end 截断到 segEnd
+    const text = 'AB[敏感词跨越]CDXY';
+    const m = mkMatch('m1', 'COMPANY', '[敏感词跨越]CD', 2);  // start=2, end=2+9=11
+    const segments = splitByImagePositions(text, [m], [5]);  // 切点在 5
+
+    // match 归属 segment[0] (start=2 in [0,5))
+    // end 截断到 segEnd=5 → relative end = min(11, 5) - segStart(0) = 5
+    expect(segments[0].matches.length).toBe(1);
+    expect(segments[0].matches[0].start).toBe(2);
+    expect(segments[0].matches[0].end).toBe(5);
+  });
 });

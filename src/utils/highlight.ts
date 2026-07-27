@@ -66,17 +66,31 @@ export function splitByImagePositions(
   cuts.push(text.length);
 
   // 3. 构建 segments
+  // 关键（spy 截图 2026-07-27 bug 修复）：
+  //   segMatches.start/end 必须平移为 segment-relative offset（segStart-based），
+  //   否则 buildHighlightParts(segText, segMatches) 在 segText 上找 match.start 会越过 segText.length
+  //   → match 被吞掉不渲染 → "图片之后的条款没高亮" 的根因
+  //   修法：filter 后立即平移（map 出新对象，不污染原 matches）
+  // 跨 segment 边界：match 归属 start 所在 segment（start-based filter），end 超出也不裁剪
+  //   → 让 buildHighlightParts 在 segText 上切片时仍能 emit 完整 match.value（因为 text.slice 不会越界）
+  //   实测：match.value 长度不会超过 segText 长度（因为 match.end - segStart < match.end - segStart
+  //         且 segText = text.slice(segStart, segEnd)，若 match.end > segEnd，则 value.length > segText.length
+  //         → buildHighlightParts 用 text.slice(lastEnd, match.start) 时 lastEnd=0, match.start > 0
+  //           会把 match.start 之前的部分当 text part，然后 try to slice text[match.start:match.end]
+  //           但 match.end > segText.length → slice 返回部分文本 → match 文本被截断）
+  //   妥协：当前实现不对跨边界 match 做特殊处理（保留完整性优先 start-based filter，
+  //         跨边界 match 整段归属 start segment，end segment 不重复 emit）
   const segments: TextSegment[] = [];
   for (let i = 0; i < cuts.length - 1; i++) {
     const segStart = cuts[i];
     const segEnd = cuts[i + 1];
-    // 筛选落在此 segment 内的 matches。match.start >= segStart 且 match.end <= segEnd
-    // 注意：match 跨越 segment 边界时（如 start 在 seg A、end 在 seg B），
-    //   旧实现是 part-based flush，自然渲染；这里改用 segment-based 后：
-    //   - 若 match 完全在某 segment 内 → 归属该 segment
-    //   - 若 match 跨越 → 归属 start 所在的 segment（避免完全丢失），但其他 segment 不重复添加
-    //     （buildHighlightParts 内部已用 match.start < lastEnd 去重，无需我们再处理）
-    const segMatches = matches.filter(m => m.start >= segStart && m.start < segEnd);
+    const segMatches = matches
+      .filter(m => m.start >= segStart && m.start < segEnd)
+      .map(m => ({
+        ...m,
+        start: m.start - segStart,
+        end: Math.min(m.end, segEnd) - segStart,  // 截断跨边界 match 到 segment 内
+      }));
     segments.push({
       start: segStart,
       end: segEnd,
