@@ -143,3 +143,46 @@ cp -r .git .git.bak.pre-filter
 - `.git/refs/original/` 已删除（避免旧 commit object 继续含 PII）
 - 总 .git: 9.8MB（filter-branch 后历史略增加）
 - **未 push 到任何远端**（`git remote -v` 输出空），因此 filter-branch 不需 force-push，未来 push 也是"干净 push"。
+
+---
+
+## 6. 第三次 PII 历史清理（2026-07-28~29）
+
+**触发原因**：第二次 PII 清理（§1-5）后 `git log --all -p` 看似 0 PII，但深入审计发现仍有两处遗漏：
+
+1. **commit message 含 PII**：`--tree-filter` 只改 file content，**不改 commit messages** → 历史 88 个 commit message 里藏着 27 处 PII 字符串（如 REDACTED-co-N / REDACTED-person / REDACTED-phone / REDACTED-co-M 等被 commit 注释引用）
+2. **dangling commit objects 残留**：filter-branch 创建新 commit objects 但旧 commit object 留在 `.git/objects` 默认 90 天（gc 之前可恢复）→ 即使 `git log --all` 0 命中，dangling 仍含 PII
+
+**Spy 拍板**："跑 filter-branch 清理历史，确保不能保留任何真实 PII"。
+
+**操作步骤**：
+
+1. 写 `/tmp/replace-pii-msg.pl`（commit message 专用 perl 脚本）
+   - **关键 fix**：`use utf8;` + `binmode(STDIN, ':utf8');` + `binmode(STDOUT, ':utf8');` —— perl 脚本字面里中文字符必须 utf8 模式才能跟 UTF-8 stdin bytes 匹配（之前缺这一行，msg-filter 跑 88 commits 实际 0 替换）
+2. `git filter-branch -f --msg-filter 'perl /tmp/replace-pii-msg.pl' --tag-name-filter cat -- --all`（第一次跑 88 commits 实际 0 替换 = use utf8 缺失）
+3. 修 perl 脚本加 `use utf8;` + 第二次跑 88 commits（替换生效）
+4. **关键后续**：
+   - `git reflog expire --expire=now --all` + `git gc --prune=now --aggressive` 物理删 dangling PII commits
+   - `git for-each-ref refs/original/ | xargs git update-ref -d` 删 filter-branch 自动建的 90 天回滚通道
+   - 删 `backup/pre-pii-history-cleanup` tag（被 filter-branch rewrite 指向新 hash，**不再起回滚作用**）
+5. 验证 3 层全 clean：
+   - reachable refs（main / format-preservation-jszip / stash）0/26 PII in messages + diff
+   - dangling objects 0（`git fsck --unreachable` 无输出）
+   - `.git/objects/pack/*.pack` 0/26 PII（grep F-scan）
+
+**踩坑（必须写入 MEMORY §6 防再犯）**：
+
+- **`use utf8` 不是 optional**——perl 脚本里中文字面 vs stdin UTF-8 bytes 匹配**必须** utf8 模式 + binmode，否则替换全部静默失败
+- **filter-branch 三次跑不是 redundant**——每次修不同的漏（tree 漏 / msg 漏 / dangling 漏）
+- **msg-filter 比 tree-filter 难**——debug 时直接拿 commit message 跑 perl 看 output，filter-branch 内部 stdin 传递可能丢字
+- **dangling commit 仍含 PII**——`git log --all` 不显示 dangling，必须 `git gc --prune=now` 物理删
+- **filter-branch 重写 stash ref**——stash 中我自己加的 PII_REWRITE_LOG §6 段 unstash 时被丢弃，working tree reset 到 HEAD 状态 → **stash + filter-branch 联合操作要 re-verify 自己的 stash**
+
+**当前状态（2026-07-29）**：
+- ✅ reachable refs：0/26 PII in commit messages + 0/26 PII in file content diff
+- ✅ dangling objects：0（git fsck --unreachable 0 hits）
+- ✅ .git/objects/pack/*.pack：0/26 PII（grep scan）
+- ✅ 464 tests pass / 3 skip / 0 fail
+- ✅ tsc clean / eslint 0 errors（4 pre-existing warnings）
+- main head: 新 hash（filter-branch 第四次 rewrite 后；旧 5c185b7 → 32d6d26 → 7e1ef56 → 5900c07 各次 rewrite）
+- **未 push 到任何远端**（无 force-push 风险）
