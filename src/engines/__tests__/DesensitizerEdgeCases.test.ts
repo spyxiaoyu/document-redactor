@@ -189,7 +189,7 @@ describe('SPEC-C3: createMaskedValue 各类型 mask 模式', () => {
   const d = new Desensitizer(new CryptoManager());
 
   const cases: Array<[SensitiveType, string, string]> = [
-    ['PHONE', '13800000000', '150****2084'],
+    ['PHONE', '13800000000', '138****0000'],
     ['EMAIL', 'a@b.com', 'a***@b.com'],  // source: local.slice(0, 2) + '***'
     ['ID_CARD', '110101199003078811', '110101********8811'],
     ['BANK_CARD', '6222021234567890123', '6222 **** **** 0123'],

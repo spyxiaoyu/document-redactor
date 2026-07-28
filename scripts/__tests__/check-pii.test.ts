@@ -123,7 +123,7 @@ describe('check-pii.sh: 12 类通用 PII 正则拦截', () => {
   });
 
   it('含地址 label 限定占位符应 exit != 0', () => {
-    const f = writeFixture('bad-addr.ts', 'const a = "地址：北京市朝阳区建国路88号";\n');
+    const f = writeFixture('bad-addr.ts', 'const a = "地址：示例省示例市示例区示例路88号";\n');
     const r = runCheck([f]);
     expect(r.code).not.toBe(0);
     expect(r.stdout + r.stderr).toMatch(/地址|住址|住所/);

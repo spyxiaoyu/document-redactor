@@ -97,12 +97,12 @@ describe('extractContext', () => {
    */
   it('返回 match 前后 radius 字符（不含 match 本身）', () => {
     const text = '甲方：北京示例科技有限公司';
-    // index=8 是 '动' (前后 3 字符)
-    // before = slice(max(0,8-3)=5, 8) = slice(5, 8) = '字节跳'
-    // after = slice(8, min(15, 8+3)=11) = slice(8, 11) = '动科技'
-    // result = '...' + '字节跳' + '动科技' + '...' = '...示例科技...'
+    // index=8 是 '技' (前后 3 字符)
+    // before = slice(max(0,8-3)=5, 8) = slice(5, 8) = '示例科'
+    // after = slice(8, min(13, 8+3)=11) = slice(8, 11) = '技有限'
+    // result = '...' + '示例科' + '技有限' + '...' = '...示例科技有限...'
     const ctx = extractContext(text, 8, 3);
-    expect(ctx).toBe('...示例科技...');
+    expect(ctx).toBe('...示例科技有限...');
   });
 
   it('radius 超出文本边界：截断到文本边界', () => {

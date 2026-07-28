@@ -86,7 +86,7 @@ describe('B0: DocxZipReader prototype on user real docx', () => {
       '占位人',
       '13800000000',
       'contact@client-b.test',
-      '北京示例科技有限公司',
+      '示例公司有限公司',
       '张某某',
       '13800000001',
       'contact@client-a.test',

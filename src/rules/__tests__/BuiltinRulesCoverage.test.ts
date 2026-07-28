@@ -56,7 +56,7 @@ describe('BuiltinRules coverage on user real docx', () => {
       ['占位人', 'NAME'],
       ['13800000000', 'PHONE'],
       ['contact@client-b.test', 'EMAIL'],
-      ['北京示例科技有限公司', 'COMPANY'],
+      ['示例公司有限公司', 'COMPANY'],
       ['张某某', 'NAME'],
       ['13800000001', 'PHONE'],
       ['contact@client-a.test', 'EMAIL'],

@@ -9,13 +9,13 @@ describe('detect smoke: 脱敏替换后敏感词识别能力完整', () => {
   const text = `甲方：北京示例科技有限公司
 乙方：上海甲乙集团股份有限公司
 联系人：张三、李四
-电话：13800000000 / 01000000000
+电话：13800000000 / 010-00000000
 邮箱：li@test-corp.com / wang@example-corp.com
 身份证：110101199003078888
 银行卡：6222600266661234567
 税号：91110000123456789X
 合同号：SAMPLE-CT-2024-001 兹有...
-地址：北京市海淀区中关村大街1号
+地址：示例省示例市示例区示例路1号
 项目编号：SAMPLE-A-001
 金额：人民币 100,000.00 元整（大写：壹拾万元整）
 开户行：中国工商银行北京分行 0200025609200013713`;
@@ -31,7 +31,7 @@ describe('detect smoke: 脱敏替换后敏感词识别能力完整', () => {
 
     // 期望：13 类全覆盖（脱敏替换不应影响检测）
     const expected: Record<string, number> = {
-      PHONE: 2,           // 13800000000 + 01000000000
+      PHONE: 2,           // 13800000000 + 010-00000000
       EMAIL: 2,           // 2 emails
       ID_CARD: 1,         // 1 ID
       BANK_CARD: 2,       // 银行卡 + 0200025609200013713
@@ -52,10 +52,10 @@ describe('detect smoke: 脱敏替换后敏感词识别能力完整', () => {
 
   it('PHONE regex 不受脱敏影响（手机 + 固话都能识别）', () => {
     const finder = new SensitiveFinder();
-    const r = finder.findSensitiveContent('电话：13800000000 或 01000000000');
+    const r = finder.findSensitiveContent('电话：13800000000 或 010-00000000');
     const phones = r.matches.filter(m => m.type === 'PHONE').map(m => m.value);
     expect(phones).toContain('13800000000');
-    expect(phones.some(p => p.includes('01000000000'))).toBe(true);
+    expect(phones.some(p => p.includes('010-00000000'))).toBe(true);
   });
 
   it('COMPANY regex 不受脱敏影响（中文 form 替换后仍识别）', () => {

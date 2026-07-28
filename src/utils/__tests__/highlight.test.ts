@@ -129,8 +129,8 @@ describe('buildHighlightParts: 取消高亮不能丢字段', () => {
     // match.start < lastEnd 视为重叠，跳过
     const text = '示例文化';
     const matches: SensitiveMatch[] = [
-      mkMatch('m1', 'COMPANY', '示例文化', 0),  // 6 chars
-      mkMatch('m2', 'COMPANY', '文化', 3),         // 完全在 m1 内
+      mkMatch('m1', 'COMPANY', '示例文化', 0),  // 4 chars
+      mkMatch('m2', 'COMPANY', '例文化', 1),         // 完全在 m1 内
     ];
     const selectedIds = new Set(['m1', 'm2']);
 

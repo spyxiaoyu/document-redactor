@@ -67,9 +67,9 @@ describe('fileStore.addManualMatch: 重叠老 match 必须删除', () => {
   });
 
   it('spy 截图回归：完全重叠的老 ADDRESS 替换为新 CUSTOM', () => {
-    // 模拟默认检测：ADDRESS rule 命中 start=34 end=62
-    const address = mkMatch('auto-addr-1', 'ADDRESS', '上海市黄浦区示例路1号示例大厦', 34);
-    const phone = mkMatch('auto-phone-1', 'PHONE', '13800000000', 86);
+    // 模拟默认检测：ADDRESS rule 命中 start=32 end=47
+    const address = mkMatch('auto-addr-1', 'ADDRESS', '上海市黄浦区示例路1号示例大厦', 32);
+    const phone = mkMatch('auto-phone-1', 'PHONE', '13800000000', 71);
     seedStore(RAW_TEXT, [address, phone]);
 
     // spy 取消 ADDRESS 高亮
@@ -89,8 +89,8 @@ describe('fileStore.addManualMatch: 重叠老 match 必须删除', () => {
     const customs = state.sensitiveMatches.filter(m => m.type === 'CUSTOM');
     expect(customs.length).toBe(1);
     expect(customs[0].value).toBe(text);
-    expect(customs[0].start).toBe(34);
-    expect(customs[0].end).toBe(62);
+    expect(customs[0].start).toBe(32);
+    expect(customs[0].end).toBe(47);
     expect(state.selectedMatches.has(customs[0].id)).toBe(true);
 
     // 3. 关键断言：用 buildHighlightParts 渲染，新 CUSTOM 必须出现在 match kind 中
@@ -107,8 +107,8 @@ describe('fileStore.addManualMatch: 重叠老 match 必须删除', () => {
   });
 
   it('完全包含：老 match 是新 match 的子串，老 match 被删', () => {
-    const subOld = mkMatch('auto-sub', 'COMPANY', '示例文化', 3);  // 0..7 in "甲方：辛公司..."
-    // 实际 start=3, end=10
+    const subOld = mkMatch('auto-sub', 'COMPANY', '示例文化', 3);  // 3..7 in "甲方：示例文化有限公司上海分公司"
+    // 实际 start=3, end=7
     seedStore(RAW_TEXT, [subOld]);
 
     // 手动添加 "示例文化有限公司上海分公司"（包含子串）
@@ -123,10 +123,10 @@ describe('fileStore.addManualMatch: 重叠老 match 必须删除', () => {
   });
 
   it('部分重叠：老 match 部分覆盖新 match，老 match 被删', () => {
-    const partial = mkMatch('auto-partial', 'COMPANY', '辛公司', 3);  // 0..3
+    const partial = mkMatch('auto-partial', 'COMPANY', '辛公司', 3);  // 3..6 (占位 "示例" 起点)
     seedStore(RAW_TEXT, [partial]);
 
-    const text = '示例文化有限公司';  // 3..12
+    const text = '示例文化有限公司';  // 3..10
     useFileStore.getState().addManualMatch(text);
 
     const state = useFileStore.getState();
@@ -135,11 +135,11 @@ describe('fileStore.addManualMatch: 重叠老 match 必须删除', () => {
   });
 
   it('完全不重叠：新老 match 共存', () => {
-    const farOld = mkMatch('auto-far', 'PHONE', '13800000000', 86);
+    const farOld = mkMatch('auto-far', 'PHONE', '13800000000', 71);
     seedStore(RAW_TEXT, [farOld]);
 
     // 在文本前面找一个不重叠的位置
-    const text = '占位人';  // start=25, end=27 (跟 far 不重叠)
+    const text = '占位人';  // start=23, end=26 (跟 far 不重叠)
     useFileStore.getState().addManualMatch(text);
 
     const state = useFileStore.getState();
@@ -166,7 +166,7 @@ describe('fileStore.addManualMatch: 重叠老 match 必须删除', () => {
   });
 
   it('关键词在 rawText 里不存在：no-op（不影响 selectedMatches）', () => {
-    const phone = mkMatch('auto-phone', 'PHONE', '13800000000', 109);
+    const phone = mkMatch('auto-phone', 'PHONE', '13800000000', 71);
     seedStore(RAW_TEXT, [phone]);
     const beforeSelected = useFileStore.getState().selectedMatches.size;
 

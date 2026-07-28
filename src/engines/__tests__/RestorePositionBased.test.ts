@@ -66,7 +66,7 @@ describe('Desensitizer.restore — position-based (the second bug)', () => {
     // After position-based replace: company (18) + "____" (4) = 22 chars (not equal to original 19).
     // The 2nd entry's position is wrong in this contrived test, but the point is:
     //   position-based replace shouldn't introduce 5x repetition.
-    expect(restored).toContain('辛公司');
+    expect(restored).toContain('示例公司');
   });
 
   it('full UploadPage-style pipeline: text + matches → desensitized underscores → restore', async () => {

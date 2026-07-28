@@ -90,7 +90,7 @@ describe('B1: applyDocxEdits on user real docx', () => {
       { value: '占位人', token: '[NAME_0003]' },
       { value: '13800000000', token: '[PHONE_0004]' },
       { value: 'contact@client-b.test', token: '[EMAIL_0005]' },
-      { value: '北京示例科技有限公司', token: '[COMPANY_0006]' },
+      { value: '示例公司', token: '[COMPANY_0006]' },
       { value: '张某某', token: '[NAME_0007]' },
       { value: '13800000001', token: '[PHONE_0008]' },
       { value: 'contact@client-a.test', token: '[EMAIL_0009]' },
@@ -174,7 +174,7 @@ describe('B1: applyDocxEdits on user real docx', () => {
   });
 
   it('B6: same-length + same-originalValue (dedup case, replaceAll behavior)', () => {
-    // 同一敏感字段在 docx 出现多次（如"北京示例科技有限公司"在合同里出现 3 次）
+    // 同一敏感字段在 docx 出现多次（如"示例公司"在合同里出现 3 次）
     // edits 应该只有一个 entry（caller 去重），applyDocxEdits 走 replaceAll 路径
     const xml = `<w:body>
       <w:p><w:r><w:t>甲方：__________________</w:t></w:r></w:p>
@@ -182,10 +182,10 @@ describe('B1: applyDocxEdits on user real docx', () => {
       <w:p><w:r><w:t>丙方：__________________</w:t></w:r></w:p>
     </w:body>`;
     const edits = [
-      { maskedToken: '__________________', originalValue: '北京示例科技有限公司' },
+      { maskedToken: '__________________', originalValue: '示例公司' },
     ];
     const out = applyDocxEdits(xml, edits);
-    const count = (out.match(/北京示例科技有限公司/g) || []).length;
+    const count = (out.match(/示例公司/g) || []).length;
     console.log(`\n=== B6 dedup 输出 ===\n${out}\n  count=${count}`);
     expect(out).not.toMatch(/_{5,}/);
     expect(count).toBe(3);

@@ -40,7 +40,7 @@ const SPY_FIELDS: SpyField[] = [
   { value: '占位人', token: '[NAME_0003]' },
   { value: '13800000000', token: '[PHONE_0004]' },
   { value: 'contact@client-b.test', token: '[EMAIL_0005]' },
-  { value: '北京示例科技有限公司', token: '[COMPANY_0006]' },
+  { value: '示例公司有限公司', token: '[COMPANY_0006]' },
   { value: '张某某', token: '[NAME_0007]' },
   { value: '13800000001', token: '[PHONE_0008]' },
   { value: 'contact@client-a.test', token: '[EMAIL_0009]' },

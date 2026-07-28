@@ -187,21 +187,21 @@ describe('用户截图报告问题修复（2026-07-26）', () => {
 });
 
 // ============================================================
-// 第二批真合同反馈（2026-07-27 央视代理商框架合同 — spy 桌面真合同）
+// 第二批真合同反馈（2026-07-27 示例合同 — spy 真合同）
 //   - FP-A: URL regex 吞中文右括号）后内容
 //   - FP-B: "项目名称仅供参考" 误识别为 PROJECT_NAME
 //   - FP-C: "乙方作为代理公司" 误识别为 COMPANY（X作代理模式未覆盖）
-//   - FP-D: "广告发布后以央视市场研究股份有限公司" 误识别为 COMPANY（mid-verb "以" 未覆盖）
+//   - FP-D: "广告发布后以示例市场研究股份有限公司" 误识别为 COMPANY（mid-verb "以" 未覆盖）
 // ============================================================
-describe('第二批真合同反馈（央视代理商框架合同 — 2026-07-27）', () => {
+describe('第二批真合同反馈（示例合同 — 2026-07-27）', () => {
   it('FP-A: URL 不应吞入 ）后的中文（中文右括号作终止符）', () => {
     const finder = new SensitiveFinder();
-    const text = '详见链接地址：https://csupplier.alibabacorp.com/supplier/pub/index.htm）生成的带有PO编号的订单';
+    const text = '详见链接地址：https://supplier.example-corp.com/supplier/pub/index.htm）生成的带有PO编号的订单';
     const result = finder.findSensitiveContent(text);
     const urls = result.matches.filter(m => m.type === 'URL');
     expect(urls.length).toBeGreaterThanOrEqual(1);
     // URL 必须停在 ） 前，不能吞 "生成的带有PO编号..."
-    expect(urls[0].value).toBe('https://csupplier.alibabacorp.com/supplier/pub/index.htm');
+    expect(urls[0].value).toBe('https://supplier.example-corp.com/supplier/pub/index.htm');
     expect(urls[0].value).not.toContain('生成');
   });
 
@@ -214,7 +214,7 @@ describe('第二批真合同反馈（央视代理商框架合同 — 2026-07-27�
   });
 
   it('FP-C: "乙方作为代理公司" 是叙述短语，不应识别为 COMPANY', () => {
-    // 触发来源：央视合同 5.4 "乙方作为代理公司，提供全流程服务"
+    // 触发来源：示例合同 5.4 "乙方作为代理公司，提供全流程服务"
     //   原 fix `的(?:代理|委托|代表)$` 只覆盖 "X的代理" 模式
     //   漏覆盖 "X作代理"（"X作为代理" 简写）
     //   修法：扩展 pattern 含 [作] 作为 代理/委托/代表 前的连接词
@@ -227,35 +227,35 @@ describe('第二批真合同反馈（央视代理商框架合同 — 2026-07-27�
   });
 
   it('FP-D: "广告发布后以X公司" 叙述短语，X 公司应被独立识别', () => {
-    // 触发来源：央视合同 4.2 "广告发布后以央视市场研究股份有限公司(CTR)出具"
+    // 触发来源：示例合同 4.2 "广告发布后以示例市场研究股份有限公司(占位)出具"
     //   原 mid-verb SPLIT 只查 委托/代理/代表，没查 "以"
-    //   → "广告发布后以央视市场研究股份有限公司" 整段被识别为 COMPANY
-    //   修法：mid-verb SPLIT 加 "以"，触发 SPLIT 把 "央视市场研究股份有限公司" 独立 emit
+    //   → "广告发布后以示例市场研究股份有限公司" 整段被识别为 COMPANY
+    //   修法：mid-verb SPLIT 加 "以"，触发 SPLIT 把 "示例市场研究股份有限公司" 独立 emit
     const finder = new SensitiveFinder();
-    const text = '广告发布后以央视市场研究股份有限公司(CTR)出具监播报告';
+    const text = '广告发布后以示例市场研究股份有限公司(占位)出具监播报告';
     const result = finder.findSensitiveContent(text);
     const companies = result.matches.filter(m => m.type === 'COMPANY');
     // 整段贪婪不应被识别
-    expect(companies.some(m => m.value === '广告发布后以央视市场研究股份有限公司')).toBe(false);
+    expect(companies.some(m => m.value === '广告发布后以示例市场研究股份有限公司')).toBe(false);
     // 真公司名应被独立识别
-    expect(companies.some(m => m.value === '央视市场研究股份有限公司')).toBe(true);
+    expect(companies.some(m => m.value === '示例市场研究股份有限公司')).toBe(true);
   });
 
   it('FP-E: "向甲方提供X公司" 叙述短语，X 公司应被独立识别', () => {
-    // 触发来源：央视合同 4.2 "5 个工作日之内向甲方提供央视市场研究股份有限公司(CTR)出具"
+    // 触发来源：示例合同 4.2 "5 个工作日之内向甲方提供示例市场研究股份有限公司(占位)出具"
     //   原 ACTION_VERB_TRIGGERS (f863d0b v3 扩展) 含 "提供" 36 个动作动词之一
-    //   → "向甲方提供央视市场研究股份有限公司" 整段被拒 (line 419 continue)
-    //   → 4 段真公司名"央视市场研究股份有限公司"全部漏识别
+    //   → "向甲方提供示例市场研究股份有限公司" 整段被拒 (line 419 continue)
+    //   → 4 段真公司名"示例市场研究股份有限公司"全部漏识别
     //   修法：加 "提供" mid-verb SPLIT（mirror "以" SPLIT），独立 emit X 公司
     //   guard：index≥2 (不误伤"提供链管理") + rightHan≥3 + reject chars 检查
     const finder = new SensitiveFinder();
-    const text = '乙方应当于 5 个工作日之内向甲方提供央视市场研究股份有限公司(CTR)出具监播报告';
+    const text = '乙方应当于 5 个工作日之内向甲方提供示例市场研究股份有限公司(占位)出具监播报告';
     const result = finder.findSensitiveContent(text);
     const companies = result.matches.filter(m => m.type === 'COMPANY');
     // 整段贪婪不应被识别
-    expect(companies.some(m => m.value === '日之内向甲方提供央视市场研究股份有限公司')).toBe(false);
+    expect(companies.some(m => m.value === '日之内向甲方提供示例市场研究股份有限公司')).toBe(false);
     // 真公司名应被独立识别
-    expect(companies.some(m => m.value === '央视市场研究股份有限公司')).toBe(true);
+    expect(companies.some(m => m.value === '示例市场研究股份有限公司')).toBe(true);
   });
 
   it('FP-E guard: "提供" 在 body 首（index<2）不切 — 既有 trade-off 锁定', () => {
@@ -281,34 +281,34 @@ describe('第二批真合同反馈（央视代理商框架合同 — 2026-07-27�
   });
 
   it('FP-E v2: "提供上月X公司" 时间词 guard — 不切出月份前缀', () => {
-    // 触发来源：央视合同 4.1 "次月20日前向甲方提供上月央视市场研究股份有限公司"
-    //   第一次 fix 切出了"上月央视市场研究股份有限公司"（"上月"是合同时间词，不是公司名）
+    // 触发来源：示例合同 4.1 "次月20日前向甲方提供上月示例市场研究股份有限公司"
+    //   第一次 fix 切出了"上月示例市场研究股份有限公司"（"上月"是合同时间词，不是公司名）
     //   修法：rightBody 起始是时间词（"上月/本月/当月/次月/下月/同月"）→ 不切
     //   trade-off：这种场景下"上月X公司"整段仍被 ACTION_VERB_TRIGGERS 拒（用户手动补）
     const finder = new SensitiveFinder();
-    const text = '次月20日前向甲方提供上月央视市场研究股份有限公司(CTR)出具盖章监播报告';
+    const text = '次月20日前向甲方提供上月示例市场研究股份有限公司(占位)出具盖章监播报告';
     const result = finder.findSensitiveContent(text);
     const companies = result.matches.filter(m => m.type === 'COMPANY');
     // 关键：不应切出带"上月"前缀的虚假公司名
-    expect(companies.some(m => m.value === '上月央视市场研究股份有限公司')).toBe(false);
+    expect(companies.some(m => m.value === '上月示例市场研究股份有限公司')).toBe(false);
     // 也不应识别整段（"提供"在 ACTION_VERB_TRIGGERS → 整段拒）
-    expect(companies.some(m => m.value === '次月20日前向甲方提供上月央视市场研究股份有限公司')).toBe(false);
+    expect(companies.some(m => m.value === '次月20日前向甲方提供上月示例市场研究股份有限公司')).toBe(false);
   });
 
   it('FP-E final: "提供上月X公司" 月份 SPLIT — 切掉月份后 emit 真公司名', () => {
     // 触发来源：spy L1 压力要求"一起全修，不再出问题"
-    //   之前 FP-E v2 留 trade-off 拒整段 → 2 段"提供上月CTR"漏识别
+    //   之前 FP-E v2 留 trade-off 拒整段 → 2 段"提供上月占位"漏识别
     //   修法：rightBody 起始是月份词 → skip 月份词 → 用 skip 后段作为公司名 emit
-    //     "次月20日前向甲方提供上月央视市场研究" → skip "上月" → "央视市场研究" → emit "央视市场研究股份有限公司"
+    //     "次月20日前向甲方提供上月示例市场研究" → skip "上月" → "示例市场研究" → emit "示例市场研究股份有限公司"
     //   guard：skip 后段 ≥5 han chars（比 normal ≥3 严）→ 避免误切"服务方案"等叙述名词组合
     const finder = new SensitiveFinder();
-    const text = '次月20日前向甲方提供上月央视市场研究股份有限公司(CTR)出具盖章监播报告';
+    const text = '次月20日前向甲方提供上月示例市场研究股份有限公司(占位)出具盖章监播报告';
     const result = finder.findSensitiveContent(text);
     const companies = result.matches.filter(m => m.type === 'COMPANY');
-    // 关键：应识别"央视市场研究股份有限公司"（skip 月份后）
-    expect(companies.some(m => m.value === '央视市场研究股份有限公司')).toBe(true);
-    // 不应误切"上月央视市场研究"虚假公司名
-    expect(companies.some(m => m.value === '上月央视市场研究股份有限公司')).toBe(false);
+    // 关键：应识别"示例市场研究股份有限公司"（skip 月份后）
+    expect(companies.some(m => m.value === '示例市场研究股份有限公司')).toBe(true);
+    // 不应误切"上月示例市场研究"虚假公司名
+    expect(companies.some(m => m.value === '上月示例市场研究股份有限公司')).toBe(false);
   });
 
   it('FP-E final guard: "提供本月服务方案有限公司" 月份 SPLIT 不误切叙述名词', () => {

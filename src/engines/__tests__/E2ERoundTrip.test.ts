@@ -19,9 +19,9 @@ describe('End-to-end: encrypt → decrypt → restore pipeline', () => {
     const text = '甲方：北京示例科技有限公司\n项目编号：SAMPLE-A-001\n乙方：张三';
     const matches: SensitiveMatch[] = [
       // 位置严格按 ORIGINAL text 数。已确认不重叠。
-      { id: '1', type: 'COMPANY', value: '北京示例科技有限公司', start: 3, end: 15, confidence: 1, context: 'test' },
-      { id: '2', type: 'CONTRACT_NO', value: 'SAMPLE-A-001', start: 21, end: 33, confidence: 1, context: 'test' },
-      { id: '3', type: 'NAME', value: '张三', start: 37, end: 39, confidence: 1, context: 'test' },
+      { id: '1', type: 'COMPANY', value: '北京示例科技有限公司', start: 3, end: 13, confidence: 1, context: 'test' },
+      { id: '2', type: 'CONTRACT_NO', value: 'SAMPLE-A-001', start: 19, end: 31, confidence: 1, context: 'test' },
+      { id: '3', type: 'NAME', value: '张三', start: 35, end: 37, confidence: 1, context: 'test' },
     ];
 
     // Step 1: 脱敏
@@ -66,10 +66,10 @@ describe('End-to-end: encrypt → decrypt → restore pipeline', () => {
     // 现实场景：同一公司在文中出现两次。SensitiveFinder 报两个 match，token 不同。
     const crypto = new CryptoManager();
     const desensitizer = new Desensitizer(crypto);
-    const text = '示例和示例两家公司'; // 示例在 [0,4] 和 [5,9]
+    const text = '示例和示例两家公司'; // 示例在 [0,2] 和 [3,5]
     const matches: SensitiveMatch[] = [
-      { id: '1', type: 'COMPANY', value: '示例', start: 0, end: 4, confidence: 1, context: 't' },
-      { id: '2', type: 'COMPANY', value: '示例', start: 5, end: 9, confidence: 1, context: 't' },
+      { id: '1', type: 'COMPANY', value: '示例', start: 0, end: 2, confidence: 1, context: 't' },
+      { id: '2', type: 'COMPANY', value: '示例', start: 3, end: 5, confidence: 1, context: 't' },
     ];
     const { desensitizedText, mappingTable } = await desensitizer.desensitize(text, matches, { mode: 'encrypt' });
     const restored = await desensitizer.restore(desensitizedText, mappingTable, '');

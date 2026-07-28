@@ -107,7 +107,7 @@ describe("User's exact scenario: default rules + 1 keyword '辛公司'", () => {
     expect(restored).toContain('contact@client-b.test');
     expect(restored).toContain('占位人');
     expect(restored).toContain('示例公司（北京）融媒体科技文化有限公司');
-    expect(restored).toContain('北京示例科技有限公司');
+    expect(restored).toContain('示例公司有限公司');
 
     // 完全一致（最严格的断言）
     if (restored !== originalText) {

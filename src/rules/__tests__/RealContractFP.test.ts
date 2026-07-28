@@ -81,8 +81,8 @@ describe('第七批 spy real-contract audit — 4 类 bug probe（RED 先行）'
   // ==================== P1 固话漏识别 ====================
   describe('P1 固话漏识别（真合同反复出现）', () => {
     it('case P1-1: 010 开头 11 位固话应识别 PHONE', () => {
-      // 丙丁合同"01000000000" 11 位以 0 开头
-      const text = '公司地址：北京市顺义区牛栏山镇府前街9号  电话：01000000000';
+      // 合同-A"01000000000" 11 位以 0 开头
+      const text = '公司地址：北京市X区XX路X号  电话：01000000000';
       const finder = buildFinder();
       const result = finder.findSensitiveContent(text);
       const phones = result.matches.filter(m => m.type === 'PHONE').map(m => m.value);
@@ -90,23 +90,23 @@ describe('第七批 spy real-contract audit — 4 类 bug probe（RED 先行）'
       expect(phones).toContain('01000000000');
     });
 
-    it('case P1-2: 区号-号码 "08510000000" 应识别 PHONE', () => {
-      // 戊己合同"0851-2..."区号固话
-      const text = '贵州戊己股份有限公司电话号码：08510000000';
+    it('case P1-2: 区号-号码 "0851-0000000" 应识别 PHONE', () => {
+      // 合同-B"0851-0..."区号固话
+      const text = '贵州示例股份有限公司电话号码：0851-0000000';
       const finder = buildFinder();
       const result = finder.findSensitiveContent(text);
       const phones = result.matches.filter(m => m.type === 'PHONE').map(m => m.value);
       console.log(`\n[case P1-2] phones=${JSON.stringify(phones)}`);
-      expect(phones.some(p => p.includes('2239069'))).toBe(true);
+      expect(phones.some(p => p.includes('0000000'))).toBe(true);
     });
 
     it('case P1-3 (回归): 真手机号 13XXXXXXXXX 不应受影响', () => {
-      const text = '甲方联系人：占位人  联系电话：18600063338';
+      const text = '甲方联系人：张三  联系电话：13800000000';
       const finder = buildFinder();
       const result = finder.findSensitiveContent(text);
       const phones = result.matches.filter(m => m.type === 'PHONE').map(m => m.value);
       console.log(`\n[case P1-3] phones=${JSON.stringify(phones)}`);
-      expect(phones).toContain('18600063338');
+      expect(phones).toContain('13800000000');
     });
   });
 

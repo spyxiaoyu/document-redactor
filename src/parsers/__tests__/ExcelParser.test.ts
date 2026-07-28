@@ -66,7 +66,7 @@ describe('SPEC-E2-02: ExcelParser', () => {
       });
       const result = await parser.parse(f);
       expect(result.rawText).toContain('示例');
-      expect(result.rawText).toContain('辛公司');
+      expect(result.rawText).toContain('文化');
       expect(result.rawText).toContain('13800000000');
     });
 

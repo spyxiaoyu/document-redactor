@@ -11,12 +11,12 @@ export interface BuiltinRuleDefinition {
 export const BUILTIN_RULES: BuiltinRuleDefinition[] = [
   {
     type: 'PHONE',
-    // v2 修复（spy audit batch #7 — 丙丁/戊己 "01000000000"/"08510000000" FN）：
-    //   原 regex 只接 1[3-9]\d{9} 11 位手机号，真合同桌面固话/服务热线（010/0XX-XXXXXXXX）全漏识别
+    // v2 修复（spy audit batch #7 — fixture 固话 FN）：
+    //   原 regex 只接 1[3-9]\d{9} 11 位手机号，桌面固话/服务热线（010/0XX-XXXXXXXX）全漏识别
     //   修法：top-level alternation 加固话格式 `0\d{2,4}[-.\s]?\d{7,8}`
-    //     - "01000000000" (3-8) → 11 chars ✅
-    //     - "08510000000" (4-7) → 12 chars（含 -） ✅
-    //     - "02100000000" (3-8) → 12 chars（含 -） ✅
+    //     - 11 位 0 开头 → 11 chars ✅
+    //     - 区号-号码 (4-7) → 12 chars（含 -） ✅
+    //     - 区号-号码 (3-8) → 12 chars（含 -） ✅
     //   风险：低数字短串（如 "01012345" 8 chars）误吃 → 长度 ≥ 11 兜底
     pattern: /(\+?86[-.\s]?)?(?:1[3-9]\d{9}|0\d{2,4}[-.\s]?\d{7,8})/g,
     weight: 0.95,
@@ -39,7 +39,7 @@ export const BUILTIN_RULES: BuiltinRuleDefinition[] = [
     // capture group 提取税号本体：[A-Z0-9]{15,20} 是 match[1]
     // SensitiveFinder.ts:69-72 会用 match[1] 作为 value，这样"纳税人识别号："作为 label 保留不脱敏
     //
-    // v2 修复（spy 6-docx audit — 节目甲 [5018-5036] "纳税识别号：【913100007397870325】" FP）：
+    // v2 修复（spy 6-docx audit — fixture "纳税识别号：【18位USCC】" FP）：
     //   - 原 regex label alt 只有"纳税人识别号"（6 字），不匹配文档常用简写"纳税识别号"（5 字）
     //   - 即使 label 改对，`[:：]?\s*` 也不允许中文 `【】（）()` 作分隔符
     //     → BANK_CARD 抢匹配把 18 位税号当银行卡（脱敏语义错位）
@@ -48,9 +48,9 @@ export const BUILTIN_RULES: BuiltinRuleDefinition[] = [
     //     2. label 和 capture group 之间允许 `[（(【]?\s*` / `\s*[)）]?` 中文括号分隔符
     //   - 规则位置从 list 末尾上移至 BANK_CARD 之前，使 TAX_ID 先入 matches array
     //     mergeOverlappingValueAware 同范围保留先入 → TAX_ID 优先于 BANK_CARD
-    // v3 修复（spy audit batch #7 — 测试牌/丙丁/戊己合同反复出现的"统一社会信用代码：..." FP）：
+    // v3 修复（spy audit batch #7 — fixture 合同反复出现的"统一社会信用代码：..." FP）：
     //   - 真合同最常用 label 是"统一社会信用代码"（9 字），原 regex 不收 → 18 位 USCC 漏识别
-    //   - mammoth 拼接常丢尾部字母校验码（如 91440101567914858A → 91440101567914858）
+    //   - mammoth 拼接常丢尾部字母校验码（18 位 USCC 退化成 17 位纯数字）
     //     → 退化成 17 位纯数字被 BANK_CARD regex 抢匹配 → 错标税号身份为银行卡
     //   - 修法：label alt 加"统一社会信用代码"+ "统一社会信用代码编号"（11 字 full form）
     //     → TAX_ID 先入 matches array（规则位置在 BANK_CARD 前）→ 优先识别完整 18 位
@@ -60,21 +60,21 @@ export const BUILTIN_RULES: BuiltinRuleDefinition[] = [
   },
   {
     type: 'BANK_CARD',
-    // v2 修复（spy 设备采购 docx [971-989] FP）：
-    //   原 regex `[1-9]\d{4}` 硬性拒绝前导 0，"0413090103000048204" 被截成 "413090103000048204" 18 chars
+    // v2 修复（spy 设备采购 docx FP）：
+    //   原 regex `[1-9]\d{4}` 硬性拒绝前导 0，前导 0 的 19 位账号被截成 18 chars
     //   修法：[0-9]\d{4} 允许任意首位数字
     // v3 修复：支持 19 位银联卡（原 regex 限制 16-18 位）
     //   \d{3,5} → \d{3,6} 允许最后一组 3-6 位（总 16-19 位）
-    // v4 修复（spy audit batch #7 — DEF组 contract外币账号 21 位被截 19 位 FN）：
-    //   真实合同外币账户（美元/欧元）"110060437146100000175" 21 位 / "110060437386100000122" 21 位
-    //   regex 上限 19 位 → 截 19 位丢失末尾 2 位（脱敏语义错位 — 标记 19 位 vs 实际 21 位）
+    // v4 修复（spy audit batch #7 — fixture 外币账号 21 位被截 19 位 FN）：
+    //   真实合同外币账户（美元/欧元）21 位（regex 上限 19 位）→ 截 19 位丢失末尾 2 位
+    //   （脱敏语义错位 — 标记 19 位 vs 实际 21 位）
     //   修法：\d{3,6} → \d{3,8} 允许最后一组 3-8 位（总 16-21 位）
     //   安全性：USCC 18 位纯数字 9[123] 开头 + 长度 20-21 形态几乎不存在（USCC 必有 18 位字母校验码）
     //   post-filter 不需要扩展 — USCC 形态仍是 17-19 字符检查
     //
     // 规则位置在 TAX_ID 之后：18 位纯数字既是"纳税识别号"又是潜在银行卡时，
     //   TAX_ID 先入 matches array，merge 同范围保留先入 → TAX_ID 优先
-    //   → "纳税识别号：【913100007397870325】" 正确识别为 TAX_ID（不会被 BANK_CARD 抢匹配）
+    //   → "纳税识别号：【18位USCC】" 正确识别为 TAX_ID（不会被 BANK_CARD 抢匹配）
     pattern: /[0-9]\d{4}[\s]?\d{4}[\s]?\d{4}[\s]?\d{3,8}/g,
     weight: 0.90,
     description: '银行卡号'
@@ -163,7 +163,7 @@ export const BUILTIN_RULES: BuiltinRuleDefinition[] = [
     //   2. body {2,30}（最小 2 字、最多 30 字）→ 防止 "X公司" 单字字号 + 防止超长匹配
     //   3. 行业词 16 个 + 0-10 字缓冲（"融媒体科技文化" 这种）
     //
-    // v4 拆分（spy 6-docx audit - 节目甲 [4996-5008] 等 "X集团...及其关联公司" 回归）：
+    // v4 拆分（spy 6-docx audit - fixture "X集团...及其关联公司" 回归）：
     //   - 原 regex `alt A | alt B` 单条 alternation，alt A greedy 抢匹配导致 alt B 没机会
     //     例 "合作方为阿里巴巴集团及其关联公司"：
     //       - alt A: 16 chars greedy (body=14 "合作方为阿里巴巴集团及其关联" + form="公司")
@@ -181,7 +181,7 @@ export const BUILTIN_RULES: BuiltinRuleDefinition[] = [
     type: 'COMPANY',
     // alt B：简称 + 集团（如"阿里巴巴集团"）
     // v4 拆分（见上 alt A 注释）
-    // 副词前缀拒保护（spy 6-docx audit - 节目甲 [14085-14091] "同时配合集团"）：
+    // 副词前缀拒保护（spy 6-docx audit - fixture "同时配合集团"）：
     //   - 纯 post-filter 处理（看 body 前 2-3 字符），不在 regex 里
     //     单字副词（时/同/也/又/还/但/或/仍/即/仅）会出现在真公司名（"时代集团"/"同方集团"）
     //     → 必须在 post-filter 用 2-3 字符副词链判定
@@ -208,9 +208,9 @@ export const BUILTIN_RULES: BuiltinRuleDefinition[] = [
   },
   {
     type: 'NAME',
-    // v2 修复（spy audit batch #7 — 戊己合同 "项目负责人为蔡明衡" 漏识别）：
-    //   原 regex lookbehind 只收 4 个 label（姓名/名字/客户姓名/联系人），真合同"项目负责人"未覆盖
-    //   分隔符只允许 `[:：]`，合同叙述用"为"作分隔符（"联系人为张三"/"项目负责人为蔡明衡"）→ 漏识别
+    // v2 修复（spy audit batch #7 — fixture 合同 "项目负责人为张三" 漏识别）：
+    //   原 regex lookbehind 只收 4 个 label（姓名/名字/客户姓名/联系人），合同"项目负责人"未覆盖
+    //   分隔符只允许 `[:：]`，合同叙述用"为"作分隔符（"联系人为张三"/"项目负责人为张三"）→ 漏识别
     //   修法：
     //     1. label alt 加 "项目负责人"
     //     2. 分隔符改 `[:：是为]`（含"为"叙述句常见写法）
@@ -245,7 +245,7 @@ export const BUILTIN_RULES: BuiltinRuleDefinition[] = [
     //   FP 控制（post-filter 在 SensitiveFinder.ts）：
     //     - 域名部分必须 ≥ 4 chars（防 "x.cn" 这种 3 字过短）
     //     - 必须含 . （已 regex 保证）
-    //   2026-07-27 spy 央视合同反馈 FP-A：URL 后紧跟中文右括号）时贪吞后续中文
+    //   2026-07-27 spy 合同反馈 FP-A：URL 后紧跟中文右括号）时贪吞后续中文
     //     修法：path/query 排除集加中文标点（）】」』，。；、和全角空格），URL 停在中文标点前
     pattern: /(?:https?:\/\/[\w-]+(?:\.[\w-]+)+(?:\/[^\s<>"'）】」』，。；、\u3000]*)?|www\.[\w-]+(?:\.[\w-]+)+(?:\/[^\s<>"'）】」』，。；、\u3000]*)?|(?<![\w@.])(?:[\w-]+\.)+(?:com|cn|org|net|io|gov|edu|co|ai|app|me|info|xyz|biz|com\.cn|org\.cn|net\.cn|gov\.cn|edu\.cn)(?:\/[^\s<>"'）】」』，。；、\u3000]*)?)/gi,
     weight: 0.85,
