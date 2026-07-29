@@ -240,5 +240,29 @@ cp -r .git .git.bak.pre-filter
   - bin/pii-clean.sh（事后清理一键脚本）
 - ✅ 476 tests pass / 3 skip / 0 fail（12 个新增 commit-msg contract 测试）
 - ✅ tsc clean / eslint 0 errors（4 pre-existing warnings）
-- main head: `60969de`（结构性 fix commit）→ `85115f1` → `e899d36`
+- ✅ 4 维度 PII 验证：
+  - (1) reachable commit messages: **0**（关键修复：85115f1 自身 message 含 4 个 PII literal，已 amend）
+  - (2) file content diff: **3**（全是 4 类 probe fixture 占位符，详见 §3 + §7.5，**预期保留**）
+  - (3) .git/objects/pack: **0**
+  - (4) working tree: **0**
+- main head: `efa2506`（amend + rebase 后）→ `aae8325` → `cd02845` → `e899d36`
 - **未 push 到任何远端**
+
+### 7.5 关键修复记录：85115f1 自身含 PII literal 的 amend
+
+**事件**：`cd02845`（旧 `85115f1`）的 commit message body 写了真 PII literal 描述"曾发生的 PII 泄露"：
+```
+- 27 处 PII 字符串藏在 commit message 里（REDACTED-co-x4 / REDACTED-person / REDACTED-phone 等）
+```
+4 个真字面（公司/公司/人名/手机号）进了 git history（详见 §3 PII 替换映射）。
+
+**讽刺**：装 hook 的 commit 自己被 PII literal 污染了。原因：commit-msg hook 跟 commit 85115f1 一起 commit 进去，hook 装的时刻晚于 commit。
+
+**修法**：amend `85115f1` message → 新 hash `cd02845`，把 4 个真字面替换成"REDACTED-co-x4 / REDACTED-person / REDACTED-phone 等"。然后 rebase 后续 2 个 commit（60969de → aae8325，4eee6af → efa2506）到新 `cd02845` 上。
+
+**为什么不用 `bin/pii-clean.sh` 跑全清**：pattern file `/tmp/pii-patterns.txt` 26 个 PII literal 里含 4 类 probe fixture 占位符（具体字面见 §3 映射表的"占位符"列），tree-filter 跑会把这些 fixture 字面也清掉 → 测试断。amend + rebase 只改 commit message，不动 file content，最干净。
+
+**教训（必须写入 MEMORY §6 防再犯）**：
+- **结构性 fix 装 hook 的 commit 自己也要遵守契约**——装 hook 的 commit message 应该用占位符描述示例，不能写真 PII literal
+- **不要在 commit message / 文档里写真值作"反例"**——即使是描述"曾经犯的错误"，字面字符串仍然会进 git history
+- **amend + rebase vs filter-branch**：只改 commit message 时，amend + rebase 更轻量（filter-branch 会建 refs/original/ 备份 + 改 hash 链）
