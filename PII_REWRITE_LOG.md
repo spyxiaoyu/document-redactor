@@ -186,3 +186,59 @@ cp -r .git .git.bak.pre-filter
 - ✅ tsc clean / eslint 0 errors（4 pre-existing warnings）
 - main head: 新 hash（filter-branch 第四次 rewrite 后；旧 5c185b7 → 32d6d26 → 7e1ef56 → 5900c07 各次 rewrite）
 - **未 push 到任何远端**（无 force-push 风险）
+
+## 7. 结构性 fix — PII 不再进 git history（2026-07-29）
+
+**触发原因**：filter-branch 是事后清理（4 轮 rewrite 浪费 6+ 小时），根因是 pre-commit hook 只拦 file content，commit message 完全裸奔，**第二次清理漏 commit message 里的 27 处 PII**。
+
+**核心结论**：cleanup 不能代替 prevention。结构性 fix 让 PII 字面根本进不到 git history。
+
+### 7.1 commit-msg hook 拦截 commit message 含 PII 字面
+
+**新增文件**：
+- `scripts/check-pii-msg.sh` — 12 类通用正则（与 `scripts/check-pii.sh` 同源）+ 用户本机外挂字典 `~/.pii-local/extra-patterns.txt`
+- `.git/hooks/commit-msg` — 调 `check-pii-msg.sh`，可 `SKIP_PII_CHECK=1` 紧急绕过
+- `scripts/__tests__/check-pii-msg.test.ts` — 12 个 contract 测试
+
+**实战验证**：`60969de` commit message 第一次含真 PII literal（描述脚本用了 REDACTED-co / REDACTED-phone / REDACTED-person 占位），被 hook 拦截 → 重写用占位符描述后通过。**证明结构性 fix 有效**。
+
+### 7.2 pre-commit hook 不再豁免 `__tests__/`
+
+**问题**：`__tests__/` 豁免是 2026-07-21 + 2026-07-28 两次 filter-branch 漏处理测试目录 PII 残留的根因（spy 人工 review 兜底曾漏 248 命中）。
+
+**修法**：移除 `__tests__/` 从 `EXCLUDE_DIRS_REGEX`（保留 `scripts/` 豁免 —— 工具代码 PATTERN 字面天然像 PII，且 `scripts/check-pii-msg.sh` 自身的 12 类 PII 正则会自拦）。probe 测试应用占位符（与生产一致）。
+
+**测试更新**：`staged-4: __tests__/ 目录新增占位 PII → exit 1`（取消豁免契约）。
+
+### 7.3 bin/pii-clean.sh — 一次性 PII 清理脚本
+
+**新增文件**：`bin/pii-clean.sh`（可执行，205 行）
+
+**封装经验**：把"tree-filter + msg-filter + dangling cleanup + 4 维度验证"四步封装成一次性脚本，下次再需清理 1 次跑完，不再手动 4 轮 filter-branch。
+
+**设计要点**（写在脚本注释里）：
+1. **perl script 用独立 .pl 文件，从 `$ENV{PII_PATTERNS_FILE}` 读 pattern** —— 不嵌 pattern 进 perl source，避开"bash → perl source → perl string" 3 层 escape 灾难（第一版踩坑：`sprintf '%q' "$to"` 在 bash 里把空 `$to` 变 `%q` 字面）
+2. **tree-filter 用 `find + xargs + perl -CSD -i`** —— `filter-branch --tree-filter` 语义是"command 在 working tree 上 in-place edit"，不靠 stdin/stdout。第一版用 `perl $SCRIPT` 喂 stdin 是错的，file content 没改
+3. **`perl -CSD` flag** —— `-CSD` = STDIN/STDOUT/ARGV 全 UTF-8，让 perl 默认按 UTF-8 读 ARGV 文件（中文 literal 替换才生效）。`binmode(STDIN/STDOUT, ':utf8')` + `binmode(ARGV, ':utf8')` 在某些 perl 版本会报 "binmode on unopened filehandle ARGV"，用 `-CSD` flag 最稳
+4. **macOS BSD grep 兼容** —— BSD grep 对 `^\+` 解析失败（即使 `-E` 也一样），验证逻辑用 `'^+'` 替代（BRE 里 `+` 是 literal char）
+5. **idempotent** —— 已 clean 的 repo 跑完仍 0 PII（filter-branch "Ref unchanged" 是预期）
+
+**dry-run 验证**（`/tmp/pii-clean-dryrun-60211`）：
+- 6 类真 PII literal（公司名 / 邮箱 / 手机 / 身份证 / 银行卡 / 人名）→ 全部替换成占位值
+- 4 维度验证：✅ 0 命中（reachable commit msg / reachable file diff / pack files / working tree）
+- idempotent：再跑 2 次仍 0 命中
+- **未在主 repo 上跑**（保留 `.git.bak.pre-clean-*` 备份策略，仅 dry-run 验证）
+
+**前置**：必须未 push 到远端（脚本自动 `cp -r .git → .git.bak.pre-clean-<ts>`，验证通过后 `rm -rf .git.bak.pre-clean-*`）。
+
+### 7.4 当前状态（2026-07-29 commit 60969de 后）
+
+- ✅ 4 结构性 fix 已落地：
+  - pre-commit hook（file content 含 PII 拦截）
+  - pre-commit hook 不豁免 `__tests__/`
+  - commit-msg hook（commit message 含 PII 拦截）
+  - bin/pii-clean.sh（事后清理一键脚本）
+- ✅ 476 tests pass / 3 skip / 0 fail（12 个新增 commit-msg contract 测试）
+- ✅ tsc clean / eslint 0 errors（4 pre-existing warnings）
+- main head: `60969de`（结构性 fix commit）→ `85115f1` → `e899d36`
+- **未 push 到任何远端**
