@@ -181,10 +181,11 @@ done
 [ "$total3" = "0" ] && echo "    ✅ 0 命中" || echo "    ❌ $total3"
 
 # (4) working tree
+# 注：xargs 不能接 env var prefix（如 `xargs LC_ALL=C grep`），必须把 LC_ALL 放到 xargs 之前
 echo "  (4) working tree:"
 total4=0
 for p in "${PII_PATTERNS[@]}"; do
-  n=$(git ls-files | xargs LC_ALL=C grep -F -c -- "$p" 2>/dev/null | awk -F: '{s+=$2}END{print s+0}') || n=0
+  n=$(git ls-files | LC_ALL=C xargs grep -F -c -- "$p" 2>/dev/null | awk -F: '{s+=$2}END{print s+0}') || n=0
   [ -z "$n" ] && n=0
   total4=$((total4 + n))
 done
