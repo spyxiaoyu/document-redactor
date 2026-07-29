@@ -183,7 +183,8 @@ describe('check-pii.sh: staged 模式只扫新增行（2026-07-26 diff-line 扫�
   //   - staged 模式（无参数）只扫 git diff --cached 的新增行（+ 行）
   //     → 历史行的占位样例不再永远拦截 commit
   //   - 显式文件模式保持全文件扫描（本文件前 16 个用例语义不变）
-  //   - __tests__ 目录豁免（probe 测试按 CONTRIBUTING 约定只放占位符，人工 review 兜底）
+  //   - __tests__ 目录不再豁免（2026-07-29：曾因豁免漏 248 命中 PII；probe 测试
+  //     应用占位符与生产一致）
   //
   // 每个用例在独立临时 git repo 里跑（不污染项目仓库的 staging area）。
   function makeRepo(): string {
@@ -240,7 +241,9 @@ describe('check-pii.sh: staged 模式只扫新增行（2026-07-26 diff-line 扫�
     expect(r.code, `新文件 PII 必须拦截`).not.toBe(0);
   });
 
-  it('staged-4: __tests__ 目录新增占位 PII → exit 0（probe 测试豁免）', () => {
+  it('staged-4: __tests__ 目录新增占位 PII → exit 1（2026-07-29 取消豁免）', () => {
+    // 2026-07-29 修复：__tests__/ 不再豁免（曾因豁免导致 248 命中 PII 残留）。
+    // probe 测试应用占位符与生产一致，真 PII 字面一律拦。
     const repo = makeRepo();
     repos.push(repo);
     execFileSync('git', ['commit', '-q', '--allow-empty', '-m', 'init', '--no-verify'], { cwd: repo });
@@ -249,6 +252,6 @@ describe('check-pii.sh: staged 模式只扫新增行（2026-07-26 diff-line 扫�
     fs.writeFileSync(path.join(dir, 'probe.test.ts'), 'const t = "联系人：张三";\n');
     execFileSync('git', ['add', '.'], { cwd: repo });
     const r = runCheck([], repo);
-    expect(r.code, `__tests__ 目录应豁免：${r.stdout}${r.stderr}`).toBe(0);
+    expect(r.code, `__tests__ 目录不再豁免，必须拦截 PII：${r.stdout}${r.stderr}`).not.toBe(0);
   });
 });

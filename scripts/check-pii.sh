@@ -106,10 +106,12 @@ fi
 # - 目录级：node_modules / dist / coverage / .vite / test-fixtures (gitignore 已隐式排除)
 # - 目录级：scripts/ —— 工具代码自身 (check-pii.sh 含通用正则 PATTERN 字面)
 #   + 测试 fixture（占位符测试）。scripts/ 不被本工具自身扫描，避免自拦截。
-# - 目录级：__tests__/ —— probe 测试按 CONTRIBUTING 约定只放合成占位符
-#   （张三 / 示例公司 / 6222... 测试卡号），全文件都是"长得像 PII 的假数据"
-#   → 豁免，spy 人工 review 兜底（与 scripts/ 豁免同一 trade-off）
-EXCLUDE_DIRS_REGEX='(^|/)(node_modules|dist|coverage|\.vite|test-fixtures|scripts|__tests__)(/|$)'
+#
+# 【2026-07-29 教训】__tests__/ 不再豁免：
+#   2026-07-21 + 2026-07-28 两次 filter-branch 漏处理测试目录 PII 残留，
+#   根因就是豁免了 __tests__/。probe 测试应用占位符（与生产一致），
+#   真 PII 字面进测试 = 同样要拦。spy 人工 review 兜底不再可靠（曾漏 248 命中）。
+EXCLUDE_DIRS_REGEX='(^|/)(node_modules|dist|coverage|\.vite|test-fixtures|scripts)(/|$)'
 
 # 3. 命中跟踪
 PII_HITS=0
