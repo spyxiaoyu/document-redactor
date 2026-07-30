@@ -59,9 +59,9 @@ function resetStore() {
 describe('fileStore.addManualMatch: 必须返回 boolean（成功/失败）', () => {
   beforeEach(resetStore);
 
-  it('R1: fallback 命中：addManualMatch("占位人") → true（加了 ≥1 个）', () => {
+  it('R1: fallback 命中：addManualMatch("SAMPLE-PERSON") → true（加了 ≥1 个）', () => {
     seedStore(RAW_TEXT);
-    const result = useFileStore.getState().addManualMatch('占位人');
+    const result = useFileStore.getState().addManualMatch('SAMPLE-PERSON');
     expect(typeof result).toBe('boolean');
     expect(result).toBe(true);
   });
