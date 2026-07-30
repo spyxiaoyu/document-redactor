@@ -58,6 +58,16 @@ export function UploadPage() {
   const cryptoManagerRef = useRef(new CryptoManager());
   // 保存脱敏密码，用于下载时加密内嵌元数据
   const downloadPasswordRef = useRef<string>('');
+  // 【spy 2026-07-30 修复 Chrome 随机点击 + 添加无反应】
+  //   Chrome 行为：button.mousedown → focus 切换 → 主动 `document.getSelection().removeAllRanges()`
+  //   清空选区（Safari 不这么做）。mouseup 算好的 rawOffset 在 click handler 读时已丢。
+  //   修：在 handleTextSelection（mouseup 时）把 (offset, text, rawTextLen) 缓存到 ref，
+  //   handleAddManualMatch 优先读 ref，ref 不在或校验失败才退回 window.getSelection。
+  const pendingMatchRef = useRef<{
+    offset: number | null;
+    text: string;
+    rawTextLen: number;
+  } | null>(null);
 
   // 提前到顶层：handler 里要用到，必须在 useCallback 之前声明
   const originalTextFull = parsedDocument?.rawText || '';
@@ -511,14 +521,38 @@ export function UploadPage() {
     if (text && text.length > 0 && text.length < 500) {
       setSelectedText(text);
       setAddBtnPos({ x: e.clientX, y: e.clientY });
+      // 【spy 2026-07-30 Q2 fix】缓存 rawOffset 到 ref，避开 Chrome button.mousedown
+      // 清空 selection 的 race。range 必须在 setSelectedText 之前抓，因为 React 同步
+      // setState 不会重渲染；这里 window.getSelection() 仍是当前 mouseup 的选区。
+      if (selection && selection.rangeCount > 0) {
+        const range = selection.getRangeAt(0);
+        const offset = getRawOffsetFromSelection(range);
+        pendingMatchRef.current = {
+          offset,
+          text,
+          rawTextLen: originalTextFull.length,
+        };
+      } else {
+        pendingMatchRef.current = null;
+      }
     } else {
       setSelectedText('');
       setAddBtnPos(null);
+      pendingMatchRef.current = null;
     }
-  }, []);
+  }, [originalTextFull]);
 
   const handleAddManualMatch = useCallback(() => {
     if (!selectedText) return;
+
+    // 【spy 2026-07-30 Q2 fix】优先读 ref，ref 不在或校验失败才退回 window.getSelection。
+    //   校验：cached.text === selectedText 且 cached.rawTextLen === originalTextFull.length
+    //   — 防止 React 18 strict mode 双调用、跨 rawText 切换的脏数据。
+    const cached = pendingMatchRef.current;
+    const refHasData =
+      cached !== null &&
+      cached.text === selectedText &&
+      cached.rawTextLen === originalTextFull.length;
 
     // 【spy 2026-07-29 重写】v2 fix：用 data-raw-offset 路径
     //   旧 v1 fix 用 computeSelectionOffset (TreeWalker) 算 offset，结果被
@@ -527,12 +561,18 @@ export function UploadPage() {
     //   新 v2 fix：每个 text part / match part 在 render 时打 data-raw-offset，
     //   选中时 closest('[data-raw-offset]') 拿到 rawText 起点 offset，加
     //   range.startOffset 即为真 rawText offset。完全 bypass TreeWalker / previewText.slice。
-    let position: number | null = null;
-    const sel = typeof window !== 'undefined' ? window.getSelection() : null;
-    if (sel && sel.rangeCount > 0) {
-      const range = sel.getRangeAt(0);
-      position = getRawOffsetFromSelection(range);
+    let position: number | null = refHasData ? cached!.offset : null;
+    if (position === null) {
+      // ref 不可用（被清 / 文本不一致）→ 退回原路径：读 window.getSelection
+      const sel = typeof window !== 'undefined' ? window.getSelection() : null;
+      if (sel && sel.rangeCount > 0) {
+        const range = sel.getRangeAt(0);
+        position = getRawOffsetFromSelection(range);
+      }
     }
+    // 用完即清（下次 mouseup 重新填充）
+    pendingMatchRef.current = null;
+
     // 用 rawText（带 mask token 的 rawText 就是 parsedDocument.rawText）做 slicedValue 校验
     const rawText = originalTextFull;
     const slicedValue =

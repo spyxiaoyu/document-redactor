@@ -108,3 +108,79 @@ describe('UI bug fix 契约 v2 — Bug B：+添加 按钮位置跳变（data-raw
     expect(src).toMatch(/data-raw-offset=\{rawOffset \?\? segOffset\}/);
   });
 });
+
+/**
+ * Q2 契约 — spy 2026-07-30 Chrome 随机"点 + 添加无反应"修复
+ *
+ * 根因：button.mousedown 抢焦点 → Chrome 主动 `document.getSelection().removeAllRanges()`
+ * 清空选区（Safari 保留）。mouseup 算好的 rawOffset 在 click handler 读时已丢，
+ * 走 fallback addManualMatch(selectedText) → rawText.indexOf → 0 match → 静默 return，
+ * 但 toast 仍无条件显示"已添加"，所以 spy 看到的是"按了没用"。
+ *
+ * 修法：mouseup 时把 (offset, text, rawTextLen) 缓存到 pendingMatchRef，click handler
+ * 优先读 ref，ref 不在或校验失败才退回 window.getSelection。ref 用完即清。
+ *
+ * 契约（防止后续 commit 改回去）：
+ *   1. UploadPage.tsx 必须声明 pendingMatchRef
+ *   2. handleTextSelection 必须把 (offset, text, rawTextLen) 设进 ref
+ *   3. handleAddManualMatch 必须从 ref 读 offset
+ *   4. handleAddManualMatch 必须清 ref（用完即清）
+ *   5. handleAddManualMatch 仍保留 window.getSelection fallback（ref 不可用时）
+ */
+describe('Q2 契约 — Chrome button click selection race 修复（pendingMatchRef 模式）', () => {
+  it('Q2: UploadPage.tsx 必须声明 pendingMatchRef（useRef）', () => {
+    const src = readSource('src/pages/UploadPage.tsx');
+    // 关键判定：必须出现 pendingMatchRef 标识符 + useRef 调用形式
+    expect(src).toMatch(/pendingMatchRef\s*=\s*useRef</);
+  });
+
+  it('Q2: handleTextSelection 必须把 (offset, text, rawTextLen) 设进 ref', () => {
+    const src = readSource('src/pages/UploadPage.tsx');
+    const body = findHandleTextSelectionBody(src);
+    // 设进 ref 的形式：pendingMatchRef.current = { offset, text, rawTextLen }
+    expect(body).toMatch(/pendingMatchRef\.current\s*=\s*\{/);
+    expect(body).toMatch(/offset\s*[:,]/);
+    expect(body).toMatch(/text\s*[:,]/);
+    expect(body).toMatch(/rawTextLen\s*[:,]/);
+    // 必须调 getRawOffsetFromSelection 算 offset
+    expect(body).toMatch(/getRawOffsetFromSelection\s*\(/);
+  });
+
+  it('Q2: handleAddManualMatch 必须从 ref 读 offset（优先于 window.getSelection）', () => {
+    const src = readSource('src/pages/UploadPage.tsx');
+    const body = findHandleAddManualMatchBody(src);
+    // 读 ref 形式：pendingMatchRef.current 出现在 handleAddManualMatch 函数体内
+    expect(body).toMatch(/pendingMatchRef\.current/);
+    // 必须有"ref 校验可用 → 用 ref 的 offset" 的分支
+    expect(body).toMatch(/cached\s*[!=]==?\s*null/);
+    expect(body).toMatch(/cached!?\.text\s*===\s*selectedText/);
+    expect(body).toMatch(/cached!?\.rawTextLen\s*===\s*originalTextFull\.length/);
+  });
+
+  it('Q2: handleAddManualMatch 必须清 ref（用完即清，防止下次误用）', () => {
+    const src = readSource('src/pages/UploadPage.tsx');
+    const body = findHandleAddManualMatchBody(src);
+    // 清空 ref：pendingMatchRef.current = null
+    expect(body).toMatch(/pendingMatchRef\.current\s*=\s*null/);
+  });
+
+  it('Q2: handleAddManualMatch 必须保留 window.getSelection fallback（ref 校验失败时退回）', () => {
+    const src = readSource('src/pages/UploadPage.tsx');
+    const body = findHandleAddManualMatchBody(src);
+    // fallback 路径仍存在
+    expect(body).toMatch(/window\.getSelection\s*\(\s*\)/);
+    // 路径分支：先 ref，再 window.getSelection
+    // 不强制要求特定 if-else 形态，但 ref 与 window.getSelection 调用都必须在函数体内
+  });
+});
+
+function findHandleTextSelectionBody(src: string): string {
+  const marker = 'const handleTextSelection';
+  const start = src.indexOf(marker);
+  if (start < 0) throw new Error('找不到 handleTextSelection');
+  const slice = src.slice(start);
+  // useCallback 结束形态: '\n  }, [' 或 '\n  });'
+  const end1 = slice.search(/\n {2}}, \[/);
+  if (end1 < 0) throw new Error('找不到 handleTextSelection 结束');
+  return slice.slice(0, end1 + 6);
+}
