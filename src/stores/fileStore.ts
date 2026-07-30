@@ -36,7 +36,7 @@ interface FileState {
   selectAllMatches: () => void;
   deselectAllMatches: () => void;
   desensitize: (password: string) => Promise<void>;
-  addManualMatch: (text: string, positions?: number[]) => void;
+  addManualMatch: (text: string, positions?: number[]) => boolean;
   removeMatch: (id: string) => void;
   reset: () => void;
 }
@@ -104,7 +104,7 @@ export const useFileStore = create<FileState>((set, get) => ({
 
   addManualMatch: (text, positions) => {
     const { parsedDocument } = get();
-    if (!parsedDocument || !text) return;
+    if (!parsedDocument || !text) return false;
 
     const rawText = parsedDocument.rawText;
     const newMatches: SensitiveMatch[] = [];
@@ -155,32 +155,39 @@ export const useFileStore = create<FileState>((set, get) => ({
       }
     }
 
-    if (newMatches.length > 0) {
-      const { sensitiveMatches: prev, selectedMatches: prevSelected } = get();
-
-      // 删除与新 match 区间重叠的所有老 match。
-      // 根因（spy 截图 bug）：用户取消 ADDRESS 高亮后用搜索框 addManualMatch 同段，
-      // 新 CUSTOM 与老 ADDRESS 完全重叠（start/end 相同）。
-      // buildHighlightParts 排序后遍历：老 match 先 unselected 推进 lastEnd=end，
-      // 新 match start<lastEnd 被 SKIP overlap → 永远不渲染、不脱敏。
-      // 修法：把重叠区间的所有老 match 清掉，只保留新 CUSTOM。
-      const newRanges = newMatches.map(m => ({ start: m.start, end: m.end }));
-      const overlaps = (m: SensitiveMatch) =>
-        newRanges.some(r => m.start < r.end && m.end > r.start);
-
-      const removedOld = prev.filter(overlaps);
-      const filteredOld = prev.filter(m => !overlaps(m));
-
-      const updatedSelected = new Set(prevSelected);
-      removedOld.forEach(m => updatedSelected.delete(m.id));
-      newMatches.forEach(m => updatedSelected.add(m.id));
-
-      set({
-        sensitiveMatches: [...filteredOld, ...newMatches],
-        selectedMatches: updatedSelected,
-        renderKey: get().renderKey + 1
-      });
+    if (newMatches.length === 0) {
+      // 【spy 2026-07-30 Bug C2 修复】0 match 时返回 false（而非 void）。
+      //   原代码静默 return，导致 UploadPage.handleAddManualMatch 无条件
+      //   toast "已添加" 撒谎 → 用户看到 "已添加" 但无新 match → "按了没用"。
+      //   现在 caller 可根据返回值 toast 失败消息。
+      return false;
     }
+
+    const { sensitiveMatches: prev, selectedMatches: prevSelected } = get();
+
+    // 删除与新 match 区间重叠的所有老 match。
+    // 根因（spy 截图 bug）：用户取消 ADDRESS 高亮后用搜索框 addManualMatch 同段，
+    // 新 CUSTOM 与老 ADDRESS 完全重叠（start/end 相同）。
+    // buildHighlightParts 排序后遍历：老 match 先 unselected 推进 lastEnd=end，
+    // 新 match start<lastEnd 被 SKIP overlap → 永远不渲染、不脱敏。
+    // 修法：把重叠区间的所有老 match 清掉，只保留新 CUSTOM。
+    const newRanges = newMatches.map(m => ({ start: m.start, end: m.end }));
+    const overlaps = (m: SensitiveMatch) =>
+      newRanges.some(r => m.start < r.end && m.end > r.start);
+
+    const removedOld = prev.filter(overlaps);
+    const filteredOld = prev.filter(m => !overlaps(m));
+
+    const updatedSelected = new Set(prevSelected);
+    removedOld.forEach(m => updatedSelected.delete(m.id));
+    newMatches.forEach(m => updatedSelected.add(m.id));
+
+    set({
+      sensitiveMatches: [...filteredOld, ...newMatches],
+      selectedMatches: updatedSelected,
+      renderKey: get().renderKey + 1
+    });
+    return true;
   },
 
   /**
