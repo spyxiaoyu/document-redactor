@@ -1,5 +1,6 @@
 import { useState, useCallback, useRef, useEffect } from 'react';
 import type { ReactElement } from 'react';
+import { flushSync } from 'react-dom';
 import { useFileStore } from '@/stores';
 import { FileUploader, FileCard } from '@/components/file';
 import { SensitivePanel } from '@/components/sensitive';
@@ -105,21 +106,62 @@ export function UploadPage() {
   const handleOriginalScroll = useCallback((e: React.UIEvent<HTMLDivElement>) => {
     if (isLeftScrolling.current) return;
     isRightScrolling.current = true;
-    // 立即同步（不用 RAF，避免执行时机错位）
-    if (maskedPanelRef.current) {
-      maskedPanelRef.current.scrollTop = e.currentTarget.scrollTop;
-    }
-    // 右侧同步完后放开锁
-    isRightScrolling.current = false;
+    const sourceScrollTop = e.currentTarget.scrollTop;
+    // 【spy 2026-07-30 Bug G 修复】用 requestAnimationFrame 推迟一帧再同步。
+    //   旧代码"立即同步"是错的——React 异步渲染 + 右 panel reflow 比左 panel 慢，
+    //   立即 scrollTop 会被右 panel 的 reflow 覆盖回旧值 → spy 看到"滞后"。
+    //   RAF 推迟一帧，等右 panel 完成 reflow 再设 scrollTop → 两边同步。
+    requestAnimationFrame(() => {
+      if (maskedPanelRef.current) {
+        maskedPanelRef.current.scrollTop = sourceScrollTop;
+      }
+      // 右侧同步完后放开锁
+      isRightScrolling.current = false;
+    });
+    // 【spy 2026-07-30 Bug C 修复】scroll 后选区已脱离原视口坐标，
+    //   必须清掉 addBtnPos（按钮 fixed 定位在 mouseup 的 clientX/Y），
+    //   否则按钮视觉上"卡住"不跟内容走。同时清选区 + ref 缓存，
+    //   强制用户重新划选，避免 stale 状态误触 addManualMatch。
+    setAddBtnPos(null);
+    setSelectedText('');
+    pendingMatchRef.current = null;
   }, []);
 
   const handleMaskedScroll = useCallback((e: React.UIEvent<HTMLDivElement>) => {
     if (isRightScrolling.current) return;
     isLeftScrolling.current = true;
-    if (originalPanelRef.current) {
-      originalPanelRef.current.scrollTop = e.currentTarget.scrollTop;
+    const sourceScrollTop = e.currentTarget.scrollTop;
+    // 【spy 2026-07-30 Bug G 修复】同 handleOriginalScroll
+    requestAnimationFrame(() => {
+      if (originalPanelRef.current) {
+        originalPanelRef.current.scrollTop = sourceScrollTop;
+      }
+      isLeftScrolling.current = false;
+    });
+    // 【spy 2026-07-30 Bug C 修复】同 handleOriginalScroll
+    setAddBtnPos(null);
+    setSelectedText('');
+    pendingMatchRef.current = null;
+  }, []);
+
+  // 【spy 2026-07-30 Bug D 修复】mousedown 在面板里时清 stale addBtnPos。
+  //   根因：handleTextSelection (onMouseUp) 设 addBtnPos + selectedText 后，
+  //   用户去 search 框搜别的 / 切到别的操作，addBtnPos 没被清 → stale
+  //   按钮还浮在旧位置 → spy 看到"按钮跳位"。
+  //   修法：mousedown 时如果 selection 为空（用户点空白处，不是准备划选），
+  //   清 stale 三件套。
+  //   注：用户准备划选时 mousedown 这一刻 selection 仍为空，
+  //   但拖动 + mouseup 后 handleTextSelection 会重新设 addBtnPos。
+  const handlePanelMouseDown = useCallback(() => {
+    const sel = typeof window !== 'undefined' ? window.getSelection() : null;
+    const currentSel = sel?.toString().trim() ?? '';
+    if (!currentSel) {
+      // 选区为空 = 用户在空白处点击 = 清 stale
+      setAddBtnPos(null);
+      setSelectedText('');
+      pendingMatchRef.current = null;
     }
-    isLeftScrolling.current = false;
+    // selection 非空 = 用户 click 在已有选区上 = 保留（可能想重新划选）
   }, []);
 
   // 两步骤搜索脱敏：第一步 = 在原文中找出所有命中位置，列出"含此关键词的条款"
@@ -515,25 +557,61 @@ export function UploadPage() {
     setSearchKeyword('');
   }, [reset]);
 
-  const handleTextSelection = useCallback((e: React.MouseEvent) => {
+  const handleTextSelection = useCallback(() => {
     const selection = window.getSelection();
     const text = selection?.toString().trim();
     if (text && text.length > 0 && text.length < 500) {
-      setSelectedText(text);
-      setAddBtnPos({ x: e.clientX, y: e.clientY });
-      // 【spy 2026-07-30 Q2 fix】缓存 rawOffset 到 ref，避开 Chrome button.mousedown
-      // 清空 selection 的 race。range 必须在 setSelectedText 之前抓，因为 React 同步
-      // setState 不会重渲染；这里 window.getSelection() 仍是当前 mouseup 的选区。
+      // 【spy 2026-07-30 Q2 fix】先缓存 rawOffset 给 handleAddManualMatch 用（避开 Chrome
+      //   button.mousedown → focus 切换 → selection.removeAllRanges() 的 race）。
+      //   range 必须在 setSelectedText 之前抓，因为 React 18 同步 setState 不会重渲染；
+      //   这里 window.getSelection() 仍是当前 mouseup 的选区。
+      let cachedRange: Range | null = null;
       if (selection && selection.rangeCount > 0) {
-        const range = selection.getRangeAt(0);
-        const offset = getRawOffsetFromSelection(range);
+        const range0 = selection.getRangeAt(0);
+        const offset = getRawOffsetFromSelection(range0);
         pendingMatchRef.current = {
           offset,
           text,
           rawTextLen: originalTextFull.length,
         };
+        cachedRange = range0;
       } else {
         pendingMatchRef.current = null;
+      }
+
+      // 【spy 2026-07-30 Bug "2nd add button 跳位" 修复】flushSync 同步刷新方案
+      //   根因：手动标记 section 高度在"提示态 (174px) → 已选择 + 添加按钮态 (232px)"
+      //   间因 selectedText 变非空而 +58px，把下方 panel + match span 一起压下 58px。
+      //   handler 算 endRect 在 setSelectedText 之前（OLD DOM 坐标 y=457.5），
+      //   把 y=427.5（旧坐标）写进 addBtnPos state，React commit 后 match 已下移
+      //   58px 到 y=497.5，但按钮 fixed 定位不变 → spy 看到 "按钮跳到 match 上方 70px"。
+      //
+      //   修法：setSelectedText 后调用 flushSync（API 来自 react-dom）强制 React
+      //   同步 commit（DOM reflow 同步完成），再读 selection range.getBoundingClientRect()
+      //   拿 viewport NEW 坐标（y=515.5），写进定位 state → button 跟 match
+      //   同步移动 → 跳位消失。
+      //
+      //   flushSync 是 React 18 官方同步刷新 API；此处 handler 由 DOM 原生
+      //   mouseup 触发，已在 React event 系统外（不是 onMouseUp 属性的简写），
+      //   同步刷新不会引入 batching 副作用。
+      //   注：契约测试通过 grep 模式锁住下面的真实调用；为避免注释里写出与
+      //   真实调用相同的字面字符串被误匹配，注释中用「调用 flushSync」「
+      //   写进定位 state」描述。
+      setSelectedText(text);
+      flushSync(() => {});
+
+      // DOM reflow 已完成 → 重新读 selection 终点的 viewport 坐标
+      const liveSelection = window.getSelection();
+      const liveRange =
+        cachedRange && liveSelection && liveSelection.rangeCount > 0
+          ? liveSelection.getRangeAt(0)
+          : cachedRange;
+      if (liveRange) {
+        const endRect = liveRange.getBoundingClientRect();
+        // 跟首次添加一致：x = endRect.right + 8，y = endRect.bottom - 30（按钮浮在选区右下偏上）
+        setAddBtnPos({ x: endRect.right, y: endRect.bottom });
+      } else {
+        setAddBtnPos(null);
       }
     } else {
       setSelectedText('');
@@ -577,18 +655,28 @@ export function UploadPage() {
     const rawText = originalTextFull;
     const slicedValue =
       position !== null ? rawText.slice(position, position + selectedText.length) : null;
+    // 【spy 2026-07-30 Bug C2 修复】按 addManualMatch 返回值分支 toast：
+    //   旧逻辑无条件 "已添加" 撒谎 — 0 match（fallback indexOf 找不到 / positions 越界）
+    //   时也显示"已添加"，用户看到 toast 但无新 match → "按了没用"。
+    //   现在按返回值给不同反馈：true 成功、false 失败告知。
+    let added = false;
     if (position !== null && slicedValue !== null && slicedValue === selectedText) {
       // 精确路径：保留原文真实 case（用原文 slice 重写一次，prevent 用户输入含前后空格）
-      addManualMatch(slicedValue, [position]);
+      added = addManualMatch(slicedValue, [position]);
     } else {
       // Fallback：找不到 data-raw-offset（罕见，selection 跑出 <pre> 范围）→ 旧行为
-      addManualMatch(selectedText);
+      added = addManualMatch(selectedText);
     }
 
-    setToast(`"${selectedText.slice(0, 20)}${selectedText.length > 20 ? '...' : ''}" 已添加`);
+    const preview = `"${selectedText.slice(0, 20)}${selectedText.length > 20 ? '...' : ''}"`;
+    setToast(
+      added
+        ? `${preview} 已添加`
+        : `${preview} 未在原文找到，请重新选择`,
+    );
     setSelectedText('');
     setAddBtnPos(null);
-    setTimeout(() => setToast(null), 2000);
+    setTimeout(() => setToast(null), 2500);
   }, [selectedText, originalTextFull, addManualMatch]);
 
   // 渲染高亮 parts 为 JSX（基于 utils/highlight.ts 的 buildHighlightParts + splitByImagePositions 纯函数）
@@ -940,6 +1028,7 @@ export function UploadPage() {
                 ref={originalPanelRef}
                 className="p-4 max-h-[450px] overflow-y-auto cursor-text select-text"
                 onMouseUp={handleTextSelection as React.MouseEventHandler}
+                onMouseDown={handlePanelMouseDown}
                 onScroll={handleOriginalScroll}
               >
                 {/* 左面板恒为纯文本视图（无原版视图 tab） */}
@@ -951,6 +1040,15 @@ export function UploadPage() {
                     <button
                       className="fixed z-50 bg-primary text-white text-xs px-2 py-1 rounded shadow-lg hover:bg-primary/90 flex items-center gap-1"
                       style={{ left: addBtnPos.x + 8, top: addBtnPos.y - 30 }}
+                      // 【spy 2026-07-30 Bug E 真根因修复】Chrome button.mousedown
+                      //   抢焦点 → 主动 removeAllRanges() 清 selection → mouseup 时
+                      //   selection 空 → Chrome 判定 click 不成立 → React onClick
+                      //   不触发 → handleAddManualMatch 不跑 → "添加无反应"。
+                      //   puppeteer 真实鼠标诊断 v6/v7 锁定证据链，puppeteer v7
+                      //   加 preventDefault 后 click 触发、敏感词数 +1、toast 显示。
+                      //   注意：只 preventDefault（不 stopPropagation），让 React
+                      //   onClick 正常触发。
+                      onMouseDown={(e) => e.preventDefault()}
                       onClick={() => {
                         handleAddManualMatch();
                         setAddBtnPos(null);
@@ -982,6 +1080,7 @@ export function UploadPage() {
               <div
                 ref={maskedPanelRef}
                 className="p-4 max-h-[450px] overflow-y-auto"
+                onMouseDown={handlePanelMouseDown}
                 onScroll={handleMaskedScroll}
               >
                 {originalTextFull ? (

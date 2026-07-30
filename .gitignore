@@ -15,3 +15,7 @@ test-fixtures/*
 # scripts/__tests__/ 不屏蔽（check-pii.test.ts 是通用测试代码，必须 push）
 scripts/__fixtures__/*
 !scripts/__fixtures__/.gitkeep
+
+# pii-clean.sh / filter-branch 的物理备份目录 —— 内含【清理前】的 git history（含真 PII）。
+# 绝不能被 git add -A 意外提交回仓库。
+.git.bak.*
