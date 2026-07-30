@@ -43,7 +43,7 @@ export function Dashboard() {
           icon={<FileText className="h-8 w-8" />}
           label="活跃文件"
           value={stats.active.toString()}
-          onClick={() => navigate('/files')}
+          onClick={() => navigate('/history')}
         />
         <StatCard
           icon={<Key className="h-8 w-8" />}
@@ -88,15 +88,18 @@ export function Dashboard() {
         </div>
       </div>
 
-      {/* 卡片说明：解释"活跃文件"和"历史记录"的区别，便于用户理解 */}
+      {/* 卡片说明：解释"活跃文件"和"历史记录"的区别，以及正确的恢复方式 */}
       <div className="mt-4 space-y-2 text-muted-foreground">
         <p className="text-xs">
           <strong className="font-medium text-foreground">活跃文件</strong>：当前在系统中且未恢复的脱敏文档（status: active）。
-          可直接进入还原页面，输入密码即可还原为原文。
+          完整列表看「历史记录」页（按 status badge 区分）。
         </p>
         <p className="text-xs">
-          <strong className="font-medium text-foreground">历史记录</strong>：所有处理过的文档（已恢复 + 未恢复 + 已删除），
-          在「历史记录」页面可查看完整时间线及删除记录。
+          <strong className="font-medium text-foreground">历史记录</strong>：所有处理过的文档（已恢复 + 未恢复 + 已删除）。
+        </p>
+        <p className="text-xs">
+          <strong className="font-medium text-foreground">如何恢复</strong>：去「恢复」页面，上传脱敏文件 + 输入密码即可。
+          docx 自带加密元数据（docProps/desensitizer.xml），文件名不影响识别。
         </p>
       </div>
     </div>

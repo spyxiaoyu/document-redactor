@@ -1,6 +1,6 @@
 import { BrowserRouter, Routes, Route } from 'react-router-dom';
 import { Header, Sidebar } from '@/components/layout';
-import { Dashboard, UploadPage, SettingsPage, HistoryPage, FilesPage, RestorePage } from '@/pages';
+import { Dashboard, UploadPage, SettingsPage, HistoryPage, RestorePage } from '@/pages';
 import { useSettingsStore } from '@/stores';
 import { useEffect } from 'react';
 import { BUILD_LABEL } from '@/utils/buildInfo';
@@ -29,7 +29,6 @@ function App() {
               <Route path="/" element={<Dashboard />} />
               <Route path="/upload" element={<UploadPage />} />
               <Route path="/restore" element={<RestorePage />} />
-              <Route path="/files" element={<FilesPage />} />
               <Route path="/history" element={<HistoryPage />} />
               <Route path="/settings" element={<SettingsPage />} />
             </Routes>

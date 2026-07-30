@@ -1,12 +1,11 @@
 import { clsx } from 'clsx';
-import { Home, Upload, FileText, History, Settings, Unlock } from 'lucide-react';
+import { Home, Upload, History, Settings, Unlock } from 'lucide-react';
 import { NavLink } from 'react-router-dom';
 
 const navItems = [
   { path: '/', label: '首页', icon: Home },
   { path: '/upload', label: '上传', icon: Upload },
   { path: '/restore', label: '恢复', icon: Unlock },
-  { path: '/files', label: '文件', icon: FileText },
   { path: '/history', label: '历史', icon: History },
   { path: '/settings', label: '设置', icon: Settings },
 ];
