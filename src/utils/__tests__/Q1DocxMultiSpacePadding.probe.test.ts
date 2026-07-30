@@ -88,6 +88,14 @@ describe('Q1 真因 probe v2 — 多空格 padding 场景', () => {
     console.log('  实际 innerText 长度:', allInnerText.length);
 
     // 找到占位符（4 个 `_`）的位置
+    // 关键断言 0：整段文本必须精确等于「见【占位符】。」
+    // （trim 范围左移会导致只替换前半段 → 尾部原文残留，长度对不上）
+    expect(allInnerText, '整段 innerText 必须是 见【占位符】。').toBe(`见【${displayToken}】。`);
+
+    // 关键断言 0b：原值不得残留（含部分残留）
+    expect(allInnerText, '原值不得残留在脱敏后文档里').not.toContain(SENTINEL);
+    expect(allInnerText, '原值后半段也不得残留').not.toContain(SENTINEL.slice(2));
+
     const placeholderStart = allInnerText.indexOf('____');
     expect(placeholderStart, '占位符应在 innerText 里').toBeGreaterThanOrEqual(0);
 
@@ -130,6 +138,9 @@ describe('Q1 真因 probe v2 — 多空格 padding 场景', () => {
 
     const placeholderStart = allInnerText.indexOf('________');
     expect(placeholderStart, '长字段占位符（8 个 _）应在 innerText 里').toBeGreaterThanOrEqual(0);
+    expect(allInnerText, '长字段整段必须精确').toBe(`本协议涉及【${displayToken}】相关事宜。`);
+    expect(allInnerText, '长字段原值不得残留').not.toContain(longValue);
+    expect(allInnerText, '长字段原值尾段也不得残留').not.toContain(longValue.slice(-4));
 
     const charBefore = placeholderStart > 0 ? allInnerText[placeholderStart - 1] : '';
     const charAfter =
@@ -166,6 +177,11 @@ describe('Q1 真因 probe v2 — 多空格 padding 场景', () => {
     console.log('  原 innerText (期望): 两处 `【________】` 各占位符前后无空白');
 
     // 找两个 ____
+    expect(allInnerText, '多 occurrence 整段必须精确').toBe(
+      `第一段：【${t0}】。第二段：【${t1}】。`,
+    );
+    expect(allInnerText, '多 occurrence 场景原值不得残留').not.toContain(SENTINEL);
+    expect(allInnerText, '多 occurrence 原值尾段也不得残留').not.toContain(SENTINEL.slice(2));
     const firstIdx = allInnerText.indexOf('____');
     const secondIdx = allInnerText.indexOf('____', firstIdx + 4);
     expect(firstIdx, '第一个占位符').toBeGreaterThanOrEqual(0);

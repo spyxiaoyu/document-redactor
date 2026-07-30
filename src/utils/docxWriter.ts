@@ -102,7 +102,7 @@ function applyNthOccurrenceEdit(
         concatenatedText, idx, idx + maskedToken.length,
       );
       return applyOneOccurrence(
-        documentXml, nodes, expanded.effectiveStart, expanded.effectiveEnd, maskedToken, originalValue,
+        documentXml, nodes, expanded.effectiveStart, expanded.effectiveEnd, originalValue,
       );
     }
     currentOccIdx++;
@@ -116,17 +116,33 @@ function applyNthOccurrenceEdit(
 }
 
 /**
- * 把 [globalStart, globalEnd) 向左/右扩展跳过紧邻的"软空白"（U+0020 / U+3000 / TAB）。
+ * 判断字符是否是可 trim 的 "padding 空白"。
+ *
+ * 覆盖所有 Unicode 空白（U+0020 半角空格 / U+3000 全角空格 / TAB / U+00A0 NBSP /
+ * U+2002 EN SPACE / U+2003 EM SPACE / U+2007 / U+202F / U+205F 等），
+ * 但**排除换行**（\n / \r）—— 换行是段落结构，不是 padding，吃掉会并段。
+ *
+ * 为什么必须覆盖全部 Unicode 空白：spy 真合同的【】padding 里混着 NBSP 和 EM SPACE
+ * （Word 排版对齐用），只判 U+0020/U+3000/TAB 会漏。
+ */
+function isPaddingWhitespace(ch: string | undefined): boolean {
+  if (!ch) return false;
+  return /[^\S\n\r]/.test(ch);
+}
+
+/**
+ * 把 [globalStart, globalEnd) 向左/右扩展跳过紧邻的"软空白"（任意 Unicode 空白，不含换行）。
  * 解决 spy 2026-07-30 Q1 报告：「【  敏感字段  】」类多空格 padding 在
  * applyDocxEdits 替换后残留 → 视觉"短下划线 + 长段空白"。
  *
  * 设计要点：
  *   - 只 trim 紧邻空白（不向中间扩散，因为 maskedToken 自身不含空白）
- *   - 三个空白类型：U+0020 半角空格 / U+3000 全角空格 / TAB
- *   - 不动换行 / U+00A0 / U+200B（这些不属于"padding"，可能是 OOXML 结构性空白）
+ *   - 空白类型判定见 isPaddingWhitespace（含 NBSP / EM SPACE / 全角空格 / TAB）
+ *   - 不动换行（\n / \r），避免破坏段落分隔
  *
  * 返回值 effectiveStart <= globalStart，effectiveEnd >= globalEnd。
- * 调用方负责用 effectiveStart/effectiveEnd 走替换（originalValue 自然填充 trimmed 区域）。
+ * 调用方**必须**用 [effectiveStart, effectiveEnd) 整段替换成 originalValue，
+ * 不能只替换 maskedToken.length 个字符 —— 否则范围左移导致原值尾部残留（PII 泄漏）。
  */
 function expandRangeOverSurroundingWhitespace(
   concatenatedText: string,
@@ -135,14 +151,10 @@ function expandRangeOverSurroundingWhitespace(
 ): { effectiveStart: number; effectiveEnd: number } {
   let effectiveStart = globalStart;
   let effectiveEnd = globalEnd;
-  while (effectiveStart > 0) {
-    const ch = concatenatedText[effectiveStart - 1];
-    if (ch !== ' ' && ch !== '\u3000' && ch !== '\t') break;
+  while (effectiveStart > 0 && isPaddingWhitespace(concatenatedText[effectiveStart - 1])) {
     effectiveStart--;
   }
-  while (effectiveEnd < concatenatedText.length) {
-    const ch = concatenatedText[effectiveEnd];
-    if (ch !== ' ' && ch !== '\u3000' && ch !== '\t') break;
+  while (effectiveEnd < concatenatedText.length && isPaddingWhitespace(concatenatedText[effectiveEnd])) {
     effectiveEnd++;
   }
   return { effectiveStart, effectiveEnd };
@@ -303,7 +315,7 @@ function applyOneEdit(documentXml: string, edit: DocxEdit): string {
   const sorted = [...occurrences].sort((a, b) => b.globalStart - a.globalStart);
   let result = documentXml;
   for (const occ of sorted) {
-    result = applyOneOccurrence(result, nodes, occ.globalStart, occ.globalEnd, maskedToken, originalValue);
+    result = applyOneOccurrence(result, nodes, occ.globalStart, occ.globalEnd, originalValue);
   }
   return result;
 }
@@ -313,7 +325,6 @@ function applyOneOccurrence(
   nodes: PositionedTextNode[],
   globalStart: number,
   globalEnd: number,
-  maskedToken: string,
   originalValue: string,
 ): string {
   // 找覆盖 [globalStart, globalEnd) 的所有 w:t 节点
@@ -326,7 +337,7 @@ function applyOneOccurrence(
   if (covering.length === 0) return documentXml;
 
   if (covering.length === 1) {
-    return replaceSingleNode(documentXml, covering[0], globalStart, maskedToken, originalValue);
+    return replaceSingleNode(documentXml, covering[0], globalStart, globalEnd, originalValue);
   }
 
   // 关键分支（commit 后续修复）：跨 <w:ins>/<w:del> 边界时禁止 merge。
@@ -339,28 +350,34 @@ function applyOneOccurrence(
   const runStart = findRunStart(documentXml, first.xmlOpenStart);
   const runEnd = findRunEnd(documentXml, last.xmlCloseEnd);
   if (runStart >= 0 && runEnd > runStart && hasInsOrDelBoundary(documentXml, runStart, runEnd)) {
-    return applyPerNodeReplacement(documentXml, covering, maskedToken, originalValue, globalStart);
+    return applyPerNodeReplacement(documentXml, covering, originalValue, globalStart, globalEnd);
   }
 
-  return mergeRunsForCoverage(documentXml, covering, maskedToken, originalValue);
+  return mergeRunsForCoverage(documentXml, covering, globalStart, globalEnd, originalValue);
 }
 
 /**
- * 单节点替换：直接替换 w:t 节点的 innerText 中 [offsetInNode, offsetInNode+tokenLen) 段。
+ * 单节点替换：替换 w:t 节点 innerText 里 [globalStart, globalEnd) 对应的整段。
+ *
+ * 关键（Q1 修复 v2）：必须用 globalEnd 而不是 globalStart + maskedToken.length。
+ * trim padding 后范围左右都扩了，只按 maskedToken 长度替换会整体左移 →
+ * 原值尾部残留（spy 截图里的「【______ 品牌广告】」= 残留原文，不是空白）。
+ * 同时对节点边界做 clamp，防止 trim 跨出本节点时算出负 offset。
  */
 function replaceSingleNode(
   documentXml: string,
   node: PositionedTextNode,
   globalStart: number,
-  maskedToken: string,
+  globalEnd: number,
   originalValue: string,
 ): string {
-  const offsetInNode = globalStart - node.globalStart;
   const innerText = documentXml.slice(node.xmlOpenEnd, node.xmlCloseStart);
+  const localStart = Math.max(0, Math.min(innerText.length, globalStart - node.globalStart));
+  const localEnd = Math.max(localStart, Math.min(innerText.length, globalEnd - node.globalStart));
   const newInnerText =
-    innerText.slice(0, offsetInNode) +
+    innerText.slice(0, localStart) +
     originalValue +
-    innerText.slice(offsetInNode + maskedToken.length);
+    innerText.slice(localEnd);
 
   return (
     documentXml.slice(0, node.xmlOpenEnd) +
@@ -393,7 +410,8 @@ function replaceSingleNode(
 function mergeRunsForCoverage(
   documentXml: string,
   covering: PositionedTextNode[],
-  maskedToken: string,
+  globalStart: number,
+  globalEnd: number,
   originalValue: string,
 ): string {
   const first = covering[0];
@@ -420,12 +438,18 @@ function mergeRunsForCoverage(
     }
   }
 
-  // 4. 拼接 covering 节点文本 + 替换 maskedToken
+  // 4. 拼接 covering 节点文本 + 替换 [globalStart, globalEnd) 整段
+  //    （Q1 修复 v2：不能用 split(maskedToken).join(originalValue)，
+  //     那样 trim 掉的 padding 空白会原样保留，且会误伤 covering 边缘的同名 token）
   let combinedText = '';
   for (const n of covering) {
     combinedText += n.text;
   }
-  const newCombinedText = combinedText.split(maskedToken).join(originalValue);
+  const base = covering[0].globalStart;
+  const localStart = Math.max(0, Math.min(combinedText.length, globalStart - base));
+  const localEnd = Math.max(localStart, Math.min(combinedText.length, globalEnd - base));
+  const newCombinedText =
+    combinedText.slice(0, localStart) + originalValue + combinedText.slice(localEnd);
 
   // 5. XML 实体转义
   const safeText = newCombinedText
@@ -525,41 +549,40 @@ function hasInsOrDelBoundary(xml: string, start: number, end: number): boolean {
  *   - Word 开着修订模式打开时，空 <w:ins> 触发生成"插入修订标记"，
  *     叠加原 <w:del> 红波浪线 → 视觉段落错位（spy 截图 bug）
  *
- * 替代方案：每个 covering <w:t> 节点独立替换自己的 maskedToken 切片，
+ * 替代方案：每个 covering <w:t> 节点独立替换自己落在 [globalStart, globalEnd) 里的切片，
  * 保留所有 <w:ins>/<w:del> wrapper 完整性。
  *
- * 实现：从后往前处理每个节点（避免位置偏移），按 maskedToken 切片位置
- * 切 originalValue，写回对应 <w:t> 的 innerText。
+ * 实现：从后往前处理每个节点（避免位置偏移），按区间切片位置切 originalValue，
+ * 写回对应 <w:t> 的 innerText。
  *
- * maskedToken 和 originalValue 可能不等长（如 restore 时 mask token 比原文长），
- * 按比例切 originalValue。如果 maskedToken.length === originalValue.length
- * （这是本 codebase 的常见情况），切片是 1:1 对应。
+ * 区间长度和 originalValue 可能不等长（如 restore 时 mask token 比原文长，
+ * 或 trim padding 后区间被扩宽），按比例切 originalValue。
  */
 function applyPerNodeReplacement(
   documentXml: string,
   covering: PositionedTextNode[],
-  maskedToken: string,
   originalValue: string,
   globalStart: number,
+  globalEnd: number,
 ): string {
   let result = documentXml;
-  const globalEnd = globalStart + maskedToken.length;
+  const rangeLength = Math.max(1, globalEnd - globalStart);
 
   // 从后往前处理（避免位置偏移）
   const sortedCovering = [...covering].sort((a, b) => b.globalStart - a.globalStart);
 
   for (const node of sortedCovering) {
-    // 本节点覆盖 maskedToken 区间的范围
+    // 本节点覆盖替换区间的范围
     const nodeStart = Math.max(node.globalStart, globalStart);
     const nodeEnd = Math.min(node.globalEnd, globalEnd);
     if (nodeStart >= nodeEnd) continue;
 
-    // maskedToken 切片
+    // 区间切片
     const maskedSliceOffset = nodeStart - globalStart;
     const maskedSliceLength = nodeEnd - nodeStart;
 
     // originalValue 对应切片（按比例切，长度可能不等）
-    const sliceRatio = originalValue.length / maskedToken.length;
+    const sliceRatio = originalValue.length / rangeLength;
     const origSliceStart = Math.floor(maskedSliceOffset * sliceRatio);
     let origSliceEnd = Math.floor((maskedSliceOffset + maskedSliceLength) * sliceRatio);
     // 防止切片为空（边界情况：originalValue 极短）

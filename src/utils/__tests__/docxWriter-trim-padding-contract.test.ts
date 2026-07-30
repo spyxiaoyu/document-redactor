@@ -36,23 +36,47 @@ describe('Q1 trim 修法契约 — 不被回退', () => {
     expect(src).toMatch(/function\s+expandRangeOverSurroundingWhitespace\s*\(/);
   });
 
-  it('C2: helper 必须处理 U+0020 (空格) / U+3000 (全角空格) / TAB 三种空白', () => {
+  it('C2: 空白判定必须覆盖全部 Unicode 空白（含 NBSP/全角/TAB），但排除换行', () => {
     const src = readSource('src/utils/docxWriter.ts');
-    // 提取 helper 函数体
-    const marker = 'function expandRangeOverSurroundingWhitespace';
+    // 必须有独立的 isPaddingWhitespace 判定函数
+    expect(src, '必须定义 isPaddingWhitespace').toMatch(/function\s+isPaddingWhitespace\s*\(/);
+
+    // 提取 isPaddingWhitespace 函数体
+    const marker = 'function isPaddingWhitespace';
     const start = src.indexOf(marker);
-    expect(start, 'helper 函数必须存在').toBeGreaterThan(-1);
+    expect(start, 'isPaddingWhitespace 必须存在').toBeGreaterThan(-1);
     const slice = src.slice(start);
-    // 结束于下一个 \n}\n
     const end = slice.indexOf('\n}\n');
-    expect(end, 'helper 函数体必须完整').toBeGreaterThan(-1);
+    expect(end, 'isPaddingWhitespace 函数体必须完整').toBeGreaterThan(-1);
     const body = slice.slice(0, end + 3);
-    // 必须含 ' ' (U+0020 半角空格)
-    expect(body, 'helper 必须处理 U+0020 半角空格').toMatch(/ch\s*!==\s*'\s'/);
-    // 必须含 \u3000 转义（全角空格）
-    expect(body, 'helper 必须处理 U+3000 全角空格').toMatch(/\\u3000/);
-    // 必须含 '\t' (TAB)
-    expect(body, 'helper 必须处理 TAB').toMatch(/ch\s*!==\s*'\\t'/);
+
+    // 必须用 [^\S\n\r]：任意 Unicode 空白（覆盖 U+0020/U+3000/TAB/U+00A0/EM SPACE 等）
+    // 但排除 \n / \r（换行是段落结构，吃掉会并段）
+    expect(body, '必须用 [^\\S\\n\\r] 覆盖全部 Unicode 空白且排除换行').toMatch(
+      /\[\^\\S\\n\\r\]/,
+    );
+
+    // expandRangeOverSurroundingWhitespace 必须调它（不能自己写窄的字面判定）
+    const helperStart = src.indexOf('function expandRangeOverSurroundingWhitespace');
+    const helperSlice = src.slice(helperStart);
+    const helperEnd = helperSlice.indexOf('\n}\n');
+    const helperBody = helperSlice.slice(0, helperEnd + 3);
+    expect(helperBody, 'helper 必须调 isPaddingWhitespace').toMatch(/isPaddingWhitespace\s*\(/);
+  });
+
+  it('C2b: 替换必须用 effectiveEnd 收尾，不能用 maskedToken.length（防原值残留）', () => {
+    const src = readSource('src/utils/docxWriter.ts');
+    // replaceSingleNode 必须接收 globalEnd 并按它切，不能用 maskedToken
+    const marker = 'function replaceSingleNode';
+    const start = src.indexOf(marker);
+    expect(start).toBeGreaterThan(-1);
+    const slice = src.slice(start);
+    const nextFn = slice.search(/\nfunction\s+/);
+    const body = nextFn > 0 ? slice.slice(0, nextFn) : slice;
+    expect(body, 'replaceSingleNode 必须按 globalEnd 切').toMatch(/globalEnd/);
+    expect(body, 'replaceSingleNode 不能再按 maskedToken.length 切').not.toMatch(
+      /maskedToken\.length/,
+    );
   });
 
   it('C3: applyOneEdit（replaceAll 路径）必须调 helper', () => {
