@@ -13,7 +13,7 @@ const navItems = [
 
 export function Sidebar() {
   return (
-    <aside className="sticky top-16 z-50 h-[calc(100vh-4rem)] w-56 border-r bg-background py-4">
+    <aside className="sticky top-16 z-50 h-[calc(100vh-4rem)] w-56 shrink-0 border-r bg-background py-4">
       <nav className="space-y-1 px-2">
         {navItems.map((item) => {
           const Icon = item.icon;

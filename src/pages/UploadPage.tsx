@@ -10,6 +10,7 @@ import type { SensitiveMatch, MappingEntry } from '@/types';
 import { CryptoManager } from '@/engines/CryptoManager';
 import { generateUUID, filterHitsByExistingMatches } from '@/utils';
 import { buildHighlightParts, splitByImagePositions } from '@/utils/highlight';
+import { getRawOffsetFromSelection } from '@/utils/selectionOffset';
 // writeDocxFromEdits / JSZip 都改为动态引入，只在导出 docx 时才下载 ~91KB gzip
 
 const MAX_DESENSITIZE_CHARS = 500_000;
@@ -518,12 +519,37 @@ export function UploadPage() {
 
   const handleAddManualMatch = useCallback(() => {
     if (!selectedText) return;
-    addManualMatch(selectedText);
+
+    // 【spy 2026-07-29 重写】v2 fix：用 data-raw-offset 路径
+    //   旧 v1 fix 用 computeSelectionOffset (TreeWalker) 算 offset，结果被
+    //   <pre> 的 JSX whitespace text node 偏 6 chars → match 加到错位置 →
+    //   视图滚动到新 match → spy 看到"跳到不相关位置"。
+    //   新 v2 fix：每个 text part / match part 在 render 时打 data-raw-offset，
+    //   选中时 closest('[data-raw-offset]') 拿到 rawText 起点 offset，加
+    //   range.startOffset 即为真 rawText offset。完全 bypass TreeWalker / previewText.slice。
+    let position: number | null = null;
+    const sel = typeof window !== 'undefined' ? window.getSelection() : null;
+    if (sel && sel.rangeCount > 0) {
+      const range = sel.getRangeAt(0);
+      position = getRawOffsetFromSelection(range);
+    }
+    // 用 rawText（带 mask token 的 rawText 就是 parsedDocument.rawText）做 slicedValue 校验
+    const rawText = originalTextFull;
+    const slicedValue =
+      position !== null ? rawText.slice(position, position + selectedText.length) : null;
+    if (position !== null && slicedValue !== null && slicedValue === selectedText) {
+      // 精确路径：保留原文真实 case（用原文 slice 重写一次，prevent 用户输入含前后空格）
+      addManualMatch(slicedValue, [position]);
+    } else {
+      // Fallback：找不到 data-raw-offset（罕见，selection 跑出 <pre> 范围）→ 旧行为
+      addManualMatch(selectedText);
+    }
+
     setToast(`"${selectedText.slice(0, 20)}${selectedText.length > 20 ? '...' : ''}" 已添加`);
     setSelectedText('');
     setAddBtnPos(null);
     setTimeout(() => setToast(null), 2000);
-  }, [selectedText, addManualMatch]);
+  }, [selectedText, originalTextFull, addManualMatch]);
 
   // 渲染高亮 parts 为 JSX（基于 utils/highlight.ts 的 buildHighlightParts + splitByImagePositions 纯函数）
   // - 原文面板：叠加 searchHits，每个 hit 渲染为 <mark id="search-hit-{i}>，可被 scrollIntoView 定位
@@ -548,11 +574,13 @@ export function UploadPage() {
       const segments = splitByImagePositions(text, matches, imagePositionsArg);
 
       // 内嵌辅助函数：渲染 match span
+      // 【spy 2026-07-29】加 data-raw-offset 让 handleAddManualMatch 能直接拿 rawText offset
       const renderMatchSpan = (
         part: ReturnType<typeof buildHighlightParts>[number] & { kind: 'match' },
         idx: number,
         segOffset: number,
         children?: ReactElement[],
+        rawOffset?: number,
       ): ReactElement => {
         const onClick = () => toggleMatchSelection(part.matchId);
         const className = isOriginal
@@ -564,6 +592,7 @@ export function UploadPage() {
         return (
           <span
             key={`match-${segOffset}-${part.matchId}-${idx}`}
+            data-raw-offset={rawOffset ?? segOffset}
             className={className}
             title={title}
             onClick={onClick}
@@ -574,15 +603,24 @@ export function UploadPage() {
       };
 
       // 2. 渲染单个 segment 的高亮 parts（不含 chip）
+      //    【spy 2026-07-29 修复】每个 text part / match part 都打 data-raw-offset，
+      //    让 handleAddManualMatch 用 getRawOffsetFromSelection 直接拿 rawText offset，
+      //    完全绕开 TreeWalker JSX whitespace text node 偏 6 chars 的 bug。
       const renderSegmentParts = (segText: string, segMatches: SensitiveMatch[], segOffset: number): ReactElement[] => {
         const parts = buildHighlightParts(segText, segMatches, localSelected, isOriginal);
         // 快速路径：无 hit 时直接渲染
         if (visibleHits.length === 0) {
           return parts.map((part, idx) => {
+            // 计算 part 在原始 rawText 的 offset
+            const partStartInText = segOffset + parts.slice(0, idx).reduce((s, p) => s + p.text.length, 0);
             if (part.kind === 'text') {
-              return <span key={`text-${segOffset}-${idx}`}>{part.text}</span>;
+              return (
+                <span key={`text-${segOffset}-${idx}`} data-raw-offset={partStartInText}>
+                  {part.text}
+                </span>
+              );
             }
-            return renderMatchSpan(part, idx, segOffset);
+            return renderMatchSpan(part, idx, segOffset, undefined, partStartInText);
           });
         }
         // 有 hit：按累积 offset 切片插入 mark
@@ -601,9 +639,13 @@ export function UploadPage() {
 
           if (hitsInThisPart.length === 0) {
             if (part.kind === 'text') {
-              result.push(<span key={`text-${segOffset}-${partIdx}`}>{part.text}</span>);
+              result.push(
+                <span key={`text-${segOffset}-${partIdx}`} data-raw-offset={partStartInText}>
+                  {part.text}
+                </span>
+              );
             } else {
-              result.push(renderMatchSpan(part, partIdx, segOffset));
+              result.push(renderMatchSpan(part, partIdx, segOffset, undefined, partStartInText));
             }
             return;
           }
@@ -614,12 +656,17 @@ export function UploadPage() {
             const relStart = Math.max(0, hit.start - partStartInText);
             const relEnd = Math.min(hit.end - partStartInText, part.text.length);
             if (relStart > cursor) {
-              slices.push(<span key={`pre-${segOffset}-${partIdx}-${hitIdx}`}>{part.text.slice(cursor, relStart)}</span>);
+              slices.push(
+                <span key={`pre-${segOffset}-${partIdx}-${hitIdx}`} data-raw-offset={partStartInText + cursor}>
+                  {part.text.slice(cursor, relStart)}
+                </span>
+              );
             }
             slices.push(
               <mark
                 key={`hit-${hit.index}-seg${segOffset}-p${partIdx}-h${hitIdx}`}
                 data-search-hit={hit.index}
+                data-raw-offset={partStartInText + Math.max(cursor, relStart)}
                 id={`search-hit-${hit.index}-seg${segOffset}-p${partIdx}-h${hitIdx}`}
                 className="bg-blue-200 dark:bg-blue-800 dark:text-blue-100 rounded px-0.5 cursor-pointer underline decoration-2"
                 title={`第 ${hit.index + 1} 处命中「${hit.value}」`}
@@ -634,13 +681,22 @@ export function UploadPage() {
             cursor = relEnd;
           });
           if (cursor < part.text.length) {
-            slices.push(<span key={`post-${segOffset}-${partIdx}`}>{part.text.slice(cursor)}</span>);
+            slices.push(
+              <span key={`post-${segOffset}-${partIdx}`} data-raw-offset={partStartInText + cursor}>
+                {part.text.slice(cursor)}
+              </span>
+            );
           }
 
           if (part.kind === 'text') {
-            result.push(...slices);
+            // text part 包一个 wrapper span with data-raw-offset，让 selection 距离跨多 slice 也能命中
+            result.push(
+              <span key={`text-wrap-${segOffset}-${partIdx}`} data-raw-offset={partStartInText}>
+                {slices}
+              </span>
+            );
           } else {
-            result.push(renderMatchSpan(part, partIdx, segOffset, slices));
+            result.push(renderMatchSpan(part, partIdx, segOffset, slices, partStartInText));
           }
         });
         return result;
@@ -828,7 +884,7 @@ export function UploadPage() {
 
         {/* 并排对比视图 */}
         {parsedDocument && (
-          <div className="grid grid-cols-2 gap-4">
+          <div className="grid grid-cols-[minmax(0,1fr)_minmax(0,1fr)] gap-4">
             {/* 原文面板 */}
             <div className="border rounded-lg overflow-hidden">
               <div className="bg-muted/50 px-4 py-2 font-medium flex items-center gap-2">
