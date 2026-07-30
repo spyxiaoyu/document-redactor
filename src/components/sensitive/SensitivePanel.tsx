@@ -1,7 +1,8 @@
+import { useState } from 'react';
 import type { SensitiveMatch, SensitiveType } from '@/types';
 import { SensitiveItem } from './SensitiveItem';
 import { SENSITIVE_TYPE_LABELS } from '@/rules';
-import { Check, Eye, EyeOff } from 'lucide-react';
+import { Check, Eye, EyeOff, ChevronDown, ChevronUp } from 'lucide-react';
 import { Button } from '@/components/common';
 
 interface SensitivePanelProps {
@@ -21,6 +22,8 @@ export function SensitivePanel({
   onDeselectAll,
   onRemove
 }: SensitivePanelProps) {
+  const [showDetails, setShowDetails] = useState(false);
+
   const groupedByType = matches.reduce((acc, match) => {
     if (!acc[match.type]) acc[match.type] = [];
     acc[match.type].push(match);
@@ -57,35 +60,51 @@ export function SensitivePanel({
             <EyeOff className="mr-1 h-4 w-4" />
             取消全选
           </Button>
+          <Button
+            size="sm"
+            variant="outline"
+            data-testid="sensitive-panel-toggle"
+            onClick={() => setShowDetails(!showDetails)}
+            aria-expanded={showDetails}
+          >
+            {showDetails ? (
+              <ChevronUp className="mr-1 h-4 w-4" />
+            ) : (
+              <ChevronDown className="mr-1 h-4 w-4" />
+            )}
+            {showDetails ? '收起' : '展开'}
+          </Button>
         </div>
       </div>
 
-      <div className="space-y-4 max-h-[500px] overflow-y-auto">
-        {sortedTypes.map(type => {
-          const typeMatches = groupedByType[type];
-          const label = SENSITIVE_TYPE_LABELS[type];
+      {showDetails && (
+        <div className="space-y-4 max-h-[500px] overflow-y-auto">
+          {sortedTypes.map(type => {
+            const typeMatches = groupedByType[type];
+            const label = SENSITIVE_TYPE_LABELS[type];
 
-          return (
-            <div key={type} className="space-y-2">
-              <div className="flex items-center gap-2 text-sm font-medium text-muted-foreground">
-                <Eye className="h-4 w-4" />
-                {label} ({typeMatches.length})
+            return (
+              <div key={type} className="space-y-2">
+                <div className="flex items-center gap-2 text-sm font-medium text-muted-foreground">
+                  <Eye className="h-4 w-4" />
+                  {label} ({typeMatches.length})
+                </div>
+                <div className="space-y-1">
+                  {typeMatches.map(match => (
+                    <SensitiveItem
+                      key={match.id}
+                      match={match}
+                      isSelected={selectedIds.has(match.id)}
+                      onToggle={() => onToggle(match.id)}
+                      onRemove={() => onRemove(match.id)}
+                    />
+                  ))}
+                </div>
               </div>
-              <div className="space-y-1">
-                {typeMatches.map(match => (
-                  <SensitiveItem
-                    key={match.id}
-                    match={match}
-                    isSelected={selectedIds.has(match.id)}
-                    onToggle={() => onToggle(match.id)}
-                    onRemove={() => onRemove(match.id)}
-                  />
-                ))}
-              </div>
-            </div>
-          );
-        })}
-      </div>
+            );
+          })}
+        </div>
+      )}
     </div>
   );
 }

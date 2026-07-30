@@ -87,6 +87,18 @@ export function Dashboard() {
           ))}
         </div>
       </div>
+
+      {/* 卡片说明：解释"活跃文件"和"历史记录"的区别，便于用户理解 */}
+      <div className="mt-4 space-y-2 text-muted-foreground">
+        <p className="text-xs">
+          <strong className="font-medium text-foreground">活跃文件</strong>：当前在系统中且未恢复的脱敏文档（status: active）。
+          可直接进入还原页面，输入密码即可还原为原文。
+        </p>
+        <p className="text-xs">
+          <strong className="font-medium text-foreground">历史记录</strong>：所有处理过的文档（已恢复 + 未恢复 + 已删除），
+          在「历史记录」页面可查看完整时间线及删除记录。
+        </p>
+      </div>
     </div>
   );
 }
