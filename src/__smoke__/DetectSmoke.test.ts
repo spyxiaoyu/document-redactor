@@ -90,7 +90,8 @@ describe('detect smoke: 脱敏替换后敏感词识别能力完整', () => {
     const matches = r.matches;
     const { desensitizedText, mappingTable } = await desensitizer.desensitize(text, matches, { mode: 'encrypt' });
     expect(desensitizedText).not.toContain('13800000000');  // 真值已被替换
-    expect(desensitizedText).toContain('__________');       // 占位符（underscore + ZWS）
+    // spy 2026-07-30：长字段压缩到 MAX_VISIBLE_UNDERSCORE_LEN (8) — phone 11 字被截到 8 个 _
+    expect(desensitizedText).toContain('________');        // 占位符（8 _ + ZWS）
 
     const restored = await desensitizer.restore(desensitizedText, mappingTable, '');
     expect(restored).toBe(text);  // 还原后等于原文

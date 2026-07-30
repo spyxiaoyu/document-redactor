@@ -86,8 +86,21 @@ export function generateToken(type: string, index: number): string {
 }
 
 /**
+ * 视觉下划线"等宽但压缩"的长度上限（spy 2026-07-30 反馈）：
+ *   spy's 真实合同里，项目名 / 长地址 / 合同号常达 18+ 字。
+ *   早期 f7341ae 方案生成 N 个 `_`，中文字体下"看起来像一长条空白 + 间断下划线"，
+ *   把上下文隔开、不便浏览。
+ *   上限 = 8：覆盖常见姓名 / 公司 / 短 ID 的原字段长度；超过 8 字的字段压缩到 8 个 `_`。
+ *
+ *   恢复仍走 position-based（Desensitizer.desensitize 记录 token 在脱敏后文本里的 start/end），
+ *   不会因为 visible 长度被截而丢字。
+ *   maskedToken 唯一性靠 ZWS marker（index+1 个 U+200B），与 visible 长度无关。
+ */
+export const MAX_VISIBLE_UNDERSCORE_LEN = 8;
+
+/**
  * 生成"视觉下划线 + 隐藏唯一标识"的 maskedToken：
- *   visible part: '_'.repeat(原值长度) → 视觉上就是下划线
+ *   visible part: '_'.repeat(min(原值长度, MAX_VISIBLE_UNDERSCORE_LEN)) → 视觉上就是下划线
  *   hidden part:  '\u200B' × (index+1)  → Word/WPS 不渲染，但保证字符串全局唯一
  *
  * 为什么不用纯下划线（'_'.repeat(len)）？—— 同长度不同原值（如两个 18 字地址）会冲突，
@@ -101,7 +114,8 @@ export function generateToken(type: string, index: number): string {
  *   极老版本（Office 2010 之前）可能显示为方框或忽略字符，需测试环境。
  */
 export function generateDisplayToken(originalValue: string, index: number): string {
-  const visible = '_'.repeat([...originalValue].length);
+  const fullLen = [...originalValue].length;
+  const visible = '_'.repeat(Math.min(fullLen, MAX_VISIBLE_UNDERSCORE_LEN));
   const zwsCount = index + 1;
   return visible + '\u200B'.repeat(zwsCount);
 }

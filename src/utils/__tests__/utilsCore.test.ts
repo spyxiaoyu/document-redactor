@@ -38,11 +38,12 @@ describe('SPEC-C1-05: generateDisplayToken', () => {
    * - 下划线视觉对齐
    * - ZWS 用 occurrence index 区分同长度 token
    */
-  it('下划线长度 = 原值字符数', () => {
+  it('下划线长度 = min(原值字符数, MAX_VISIBLE_UNDERSCORE_LEN) — 长字段压缩', () => {
+    // spy 2026-07-30：长字段（项目名/地址/合同号）压缩到 8 个 `_`，避免把上下文隔开
     const token = generateDisplayToken('13800000000', 0);
-    // 11 chars * '_' + 1 ZWS
+    // 11 chars 原值 → 8 个 `_` + 1 ZWS（被 MAX 截断）
     const underscores = token.match(/^_+/)?.[0].length ?? 0;
-    expect(underscores).toBe(11);
+    expect(underscores).toBe(8);
   });
 
   it('occurrence index = 0 → 1 个 ZWS', () => {

@@ -159,18 +159,17 @@ describe('SPEC-C1-05/06: maskedToken 格式 + 长度', () => {
     const { desensitizedText } = await desensitizer.desensitize(text, [m], { mode: 'encrypt' });
     // 不含 [PHONE_NNNN] 这种 label
     expect(desensitizedText).not.toContain('[PHONE_');
-    // 含下划线 + 零宽空格
-    expect(desensitizedText).toMatch(/_{11}\u200B/);
+    // 长字段被 MAX_VISIBLE_UNDERSCORE_LEN (8) 截断：8 个 `_` + 1 ZWS
+    expect(desensitizedText).toMatch(/_{8}\u200B/);
   });
 
-  it('maskedToken 长度 = match.value.length（视觉对齐）', async () => {
+  it('maskedToken 可见长度 <= MAX_VISIBLE_UNDERSCORE_LEN（长字段压缩）', async () => {
     const text = 'phone 12345678901 here';
     const m = mkMatch('m1', 'PHONE', '12345678901', 6);
     const { desensitizedText } = await desensitizer.desensitize(text, [m], { mode: 'encrypt' });
-    // maskedToken 应是 11 个下划线 + 1 个 ZWS = 12 chars（11 + ZWS）
-    // 但因为我们比较的是"脱敏后字符串中下划线连续段"长度，所以只看下划线
-    const underscoreRun = desensitizedText.match(/_{11,}/)?.[0].length ?? 0;
-    expect(underscoreRun).toBe(11);  // 等于 value 长度
+    // 11 字原值 → 8 个 `_` + 1 ZWS（spy 选"只压缩明显过长的字段"）
+    const underscoreRun = desensitizedText.match(/_{8,}/)?.[0].length ?? 0;
+    expect(underscoreRun).toBe(8);
   });
 
   it('多 match 按 occurrence 顺序一对一替换', async () => {
