@@ -74,6 +74,14 @@ export function applyDocxEdits(documentXml: string, edits: DocxEdit[]): string {
 /**
  * 替换 maskedToken 在 documentXml 中的第 N 个（0-indexed）occurrence。
  * 每次调用重新 scanNodes，避免前一次替换改了节点区间导致位置漂移。
+ *
+ * Q1 修复（2026-07-30）：spy 真合同场景下，敏感字段常被「【 字段 】」（括号内多空格
+ * padding）包裹。indexOf(maskedToken) 只命中原值范围，左右空格保留 + 长字段压缩到 8 _ =
+ * 「短下划线 + 长段空白」。修法：命中后向左/右扩展跳过紧邻 U+0020 / U+3000 / TAB，
+ * 扩展后的范围整体被 originalValue 替换（originalValue 不含空格，自然填空）。
+ *
+ * searchFrom 推进必须用「原 idx + maskedToken.length」，不能用扩展后的 effectiveEnd
+ * —— 否则会跳过下一个 occurrence（因为替换后文本长度变了，但原 docx 命中位置不变）。
  */
 function applyNthOccurrenceEdit(
   documentXml: string,
@@ -90,7 +98,12 @@ function applyNthOccurrenceEdit(
     const idx = concatenatedText.indexOf(maskedToken, searchFrom);
     if (idx === -1) break;
     if (currentOccIdx === occIdx) {
-      return applyOneOccurrence(documentXml, nodes, idx, idx + maskedToken.length, maskedToken, originalValue);
+      const expanded = expandRangeOverSurroundingWhitespace(
+        concatenatedText, idx, idx + maskedToken.length,
+      );
+      return applyOneOccurrence(
+        documentXml, nodes, expanded.effectiveStart, expanded.effectiveEnd, maskedToken, originalValue,
+      );
     }
     currentOccIdx++;
     searchFrom = idx + maskedToken.length;
@@ -100,6 +113,39 @@ function applyNthOccurrenceEdit(
     `(only ${currentOccIdx} occurrences in docx)`,
   );
   return documentXml;
+}
+
+/**
+ * 把 [globalStart, globalEnd) 向左/右扩展跳过紧邻的"软空白"（U+0020 / U+3000 / TAB）。
+ * 解决 spy 2026-07-30 Q1 报告：「【  敏感字段  】」类多空格 padding 在
+ * applyDocxEdits 替换后残留 → 视觉"短下划线 + 长段空白"。
+ *
+ * 设计要点：
+ *   - 只 trim 紧邻空白（不向中间扩散，因为 maskedToken 自身不含空白）
+ *   - 三个空白类型：U+0020 半角空格 / U+3000 全角空格 / TAB
+ *   - 不动换行 / U+00A0 / U+200B（这些不属于"padding"，可能是 OOXML 结构性空白）
+ *
+ * 返回值 effectiveStart <= globalStart，effectiveEnd >= globalEnd。
+ * 调用方负责用 effectiveStart/effectiveEnd 走替换（originalValue 自然填充 trimmed 区域）。
+ */
+function expandRangeOverSurroundingWhitespace(
+  concatenatedText: string,
+  globalStart: number,
+  globalEnd: number,
+): { effectiveStart: number; effectiveEnd: number } {
+  let effectiveStart = globalStart;
+  let effectiveEnd = globalEnd;
+  while (effectiveStart > 0) {
+    const ch = concatenatedText[effectiveStart - 1];
+    if (ch !== ' ' && ch !== '\u3000' && ch !== '\t') break;
+    effectiveStart--;
+  }
+  while (effectiveEnd < concatenatedText.length) {
+    const ch = concatenatedText[effectiveEnd];
+    if (ch !== ' ' && ch !== '\u3000' && ch !== '\t') break;
+    effectiveEnd++;
+  }
+  return { effectiveStart, effectiveEnd };
 }
 
 /**
@@ -237,14 +283,19 @@ function applyOneEdit(documentXml: string, edit: DocxEdit): string {
   const nodes = scanNodes(documentXml);
   const concatenatedText = nodes.map(n => n.text).join('');
 
-  // 收集所有 occurrence
+  // 收集所有 occurrence（每个 occurrence 扩展到覆盖紧邻 padding 空白，Q1 修复）
   type Occ = { globalStart: number; globalEnd: number };
   const occurrences: Occ[] = [];
   let searchFrom = 0;
   while (searchFrom < concatenatedText.length) {
     const idx = concatenatedText.indexOf(maskedToken, searchFrom);
     if (idx === -1) break;
-    occurrences.push({ globalStart: idx, globalEnd: idx + maskedToken.length });
+    const expanded = expandRangeOverSurroundingWhitespace(
+      concatenatedText, idx, idx + maskedToken.length,
+    );
+    occurrences.push({ globalStart: expanded.effectiveStart, globalEnd: expanded.effectiveEnd });
+    // searchFrom 必须用原 idx + maskedToken.length 推进，不能用 effectiveEnd
+    // （effectiveEnd 可能已超过下一个 maskedToken 起始，indexOf 会跳过它）
     searchFrom = idx + maskedToken.length;
   }
 
