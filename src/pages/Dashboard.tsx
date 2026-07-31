@@ -88,7 +88,7 @@ export function Dashboard() {
         </div>
       </div>
 
-      {/* 卡片说明：解释"活跃文件"和"历史记录"的区别，以及正确的恢复方式 */}
+      {/* 卡片说明：解释"活跃文件"/"历史记录"区别、恢复方式、"删除"行为边界 */}
       <div className="mt-4 space-y-2 text-muted-foreground">
         <p className="text-xs">
           <strong className="font-medium text-foreground">活跃文件</strong>：当前在系统中且未恢复的脱敏文档（status: active）。
@@ -100,6 +100,9 @@ export function Dashboard() {
         <p className="text-xs">
           <strong className="font-medium text-foreground">如何恢复</strong>：去「恢复」页面，上传脱敏文件 + 输入密码即可。
           docx 自带加密元数据（docProps/desensitizer.xml），文件名不影响识别。
+        </p>
+        <p className="text-xs">
+          <strong className="font-medium text-foreground">删除</strong>：仅清除本工具中存储的加密映射表与记录——您电脑上的脱敏文件需自行处理。
         </p>
       </div>
     </div>
