@@ -99,7 +99,7 @@ export function Dashboard() {
         </p>
         <p className="text-xs">
           <strong className="font-medium text-foreground">如何恢复</strong>：去「恢复」页面，上传脱敏文件 + 输入密码即可。
-          docx 自带加密元数据（docProps/desensitizer.xml），文件名不影响识别。
+          docx 自带加密元数据（docProps/desensitizer.xml），主路径不依赖文件名。
         </p>
         <p className="text-xs">
           <strong className="font-medium text-foreground">删除</strong>：仅清除本工具中存储的加密映射表与记录——您电脑上的脱敏文件需自行处理。
