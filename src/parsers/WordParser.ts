@@ -12,9 +12,23 @@ export class WordParser implements Parser {
     const format = getFileFormat(file);
 
     if (format === 'docx') {
+      // 防御：扩展名是 .docx 但实际是旧版 .doc（CFB 二进制）
+      // spy 2026-08-01 反馈：仅改后缀名会绕过扩展名检查，JSZip 抛 "Can't find end of central directory"
+      // peek 前 4 字节，CFB 魔数 = D0CF11E0
+      // 用 readFileAsArrayBuffer（FileReader）而非 file.arrayBuffer() — jsdom 下后者不稳定
+      const header = new Uint8Array(await readFileAsArrayBuffer(file));
+      if (isCfbHeader(header)) {
+        throw new Error(
+          '检测到这是旧版 .doc 二进制文件（CFB 容器），不是真 .docx。' +
+          '请用 WPS/Word 打开后「文件 → 另存为 → .docx」（仅改后缀名无效）。'
+        );
+      }
       return this.parseDocx(file);
     } else {
-      throw new Error('DOC format requires additional processing. Please convert to DOCX.');
+      throw new Error(
+        '暂不支持旧版 .doc 格式（Word 97-2003 二进制）。' +
+        '请用 WPS/Word 打开后「文件 → 另存为 → .docx」（仅改后缀名无效）。'
+      );
     }
   }
 
@@ -96,3 +110,22 @@ export function findImagePositions(rawText: string, mammothHtml: string): number
 }
 
 export const wordParser = new WordParser();
+
+/**
+ * CFB（Compound File Binary）魔数检测 — 旧版 .doc（Word 97-2003）的文件头
+ *   spy 2026-08-01 反馈：用户改后缀 .doc→.docx 绕过扩展名检查，工具抛 JSZip 错
+ *   修法：peek 前 4 字节，命中 D0CF11E0 → 抛"请另存为 .docx"详细错误
+ *
+ *   接受 Uint8Array 而非 File — 方便单测直接传字节，不用 mock File 的 arrayBuffer
+ *   （jsdom 下 new File() 的 arrayBuffer() 不稳定）
+ */
+const CFB_MAGIC = [0xD0, 0xCF, 0x11, 0xE0];
+export function isCfbHeader(bytes: Uint8Array): boolean {
+  if (bytes.length < 4) return false;
+  return (
+    bytes[0] === CFB_MAGIC[0] &&
+    bytes[1] === CFB_MAGIC[1] &&
+    bytes[2] === CFB_MAGIC[2] &&
+    bytes[3] === CFB_MAGIC[3]
+  );
+}
