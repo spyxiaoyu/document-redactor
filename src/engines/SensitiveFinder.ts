@@ -591,8 +591,9 @@ if (!formMatch) continue;
             const newStart = start + safeStart;
             const newEnd = newStart + newValue.length;
             // invariant check: text.slice(newStart, newEnd) === newValue
+            // 脱敏工具不应把用户文本打到 console（隐私兜底）—— 只留 invariant break 标记
             if (text.slice(newStart, newEnd) !== newValue) {
-              console.warn(`[SensitiveFinder COMPANY] invariant break: "${text.slice(newStart, newEnd)}" !== "${newValue}"`);
+              console.warn('[SensitiveFinder COMPANY] invariant break: text slice mismatch, skip match');
               continue;
             }
             value = newValue;

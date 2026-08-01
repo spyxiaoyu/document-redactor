@@ -17,8 +17,11 @@ function getBuildTime(): string {
   return new Date().toISOString();
 }
 
-export default defineConfig({
+export default defineConfig(({ mode }) => ({
   plugins: [react()],
+  // GitHub Pages 子路径部署（xxx.github.io/document-redactor/）vs 本地开发（/）
+  // 生产构建用子路径，dev 用根路径——避免本地 URL 多一段 /document-redactor/
+  base: mode === 'production' ? '/document-redactor/' : '/',
   resolve: {
     alias: {
       '@': path.resolve(__dirname, './src'),
@@ -34,4 +37,4 @@ export default defineConfig({
   worker: {
     format: 'es'
   }
-})
+}))

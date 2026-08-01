@@ -505,7 +505,7 @@ export function UploadPage() {
         triggerDownload(blob, originalFileName.replace(/\.[^.]+$/, '') + '_脱敏.docx');
         return;
       } catch (err) {
-        console.warn('[buildDesensitizedDocx] B 方案失败，fallback 到 docx 库重建:', err);
+        console.warn('[buildDesensitizedDocx] B 方案失败，fallback 到 docx 库重建');
       }
     }
 
